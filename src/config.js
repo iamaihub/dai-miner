@@ -260,6 +260,22 @@ export function getDefaultConfig() {
       startupTimeoutMs: 60000,
     },
 
+    // Opt-in multi-device model pooling (QVAC SDK 0.21+ "clustered inference
+    // over RPC", built on llama.cpp's RPC backend). Off by default: the RPC
+    // channel is unauthenticated, so this is for a person's OWN devices on a
+    // shared private topic (same topic + same settings on each device), not
+    // the open miner network. workerOnly:true on a device that should only
+    // lend memory/compute and never initiate its own clustered load.
+    qvacCluster: {
+      autoStart: false,
+      topic: "",
+      allowRemote: false,
+      workerOnly: false,
+      minPeers: 1,
+      maxDevices: 8,
+      discoverTimeoutMs: 4000,
+    },
+
     // Populated by the GUI onboarding flow
     daiWallet: "",
     solanaAddress: "",

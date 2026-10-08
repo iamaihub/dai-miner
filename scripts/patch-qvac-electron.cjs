@@ -75,7 +75,8 @@ patchFile('bare-runtime/lib/spawn.js', {
 });
 
 // 2. @qvac/sdk: reject on spawn "error" instead of crashing the host process.
-patchFile('@qvac/sdk/dist/client/rpc/node-rpc-client.js', {
+// Path gained a `src/` segment in the 0.21.0 dist layout (was dist/client/rpc/…).
+patchFile('@qvac/sdk/dist/src/client/rpc/node-rpc-client.js', {
   applied: (src) => src.includes('bareWorkerProc.on("error"'),
   anchor: '            if (bareWorkerProc) {\n',
   replacement:

@@ -988,6 +988,25 @@ export class DAIMinerNode {
       }
     }
 
+    // 2c-i. QVAC RPC cluster worker — opt-in multi-device model pooling
+    // (config.qvacCluster). Off by default: the RPC channel is unauthenticated,
+    // so this is for a person's own devices on a shared private topic, never
+    // the open miner network. Best-effort: a failed start just leaves this
+    // device running solo.
+    {
+      const clusterCfg = this.config.qvacCluster || {};
+      if (clusterCfg.autoStart && clusterCfg.topic) {
+        const qvacModels = await getQvacModels();
+        const server = await qvacModels.startClusterWorker(clusterCfg);
+        if (server) {
+          const stopCluster = () => { qvacModels.stopClusterWorker().catch(() => {}); };
+          process.on('exit', stopCluster);
+          process.on('SIGINT', stopCluster);
+          process.on('SIGTERM', stopCluster);
+        }
+      }
+    }
+
     // 3. Bootstrap / sync the chain
     await this.syncChain();
 

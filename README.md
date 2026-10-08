@@ -76,6 +76,10 @@ The miner creates a DAI wallet automatically on first run and stores it in `~/.d
 
 RPC endpoints can be configured per-chain under the `rpc` key — see `config.example.json`.
 
+### Multi-device model pooling
+
+QVAC SDK 0.21+ can split one model's layers across several machines over llama.cpp's RPC backend, so a model too big for any single device can still load — set the same `qvacCluster.topic` on each of **your own** devices (phone, laptop, desktop) under `qvacCluster` in `config.json`. Off by default: the channel is unauthenticated, so this is for a private group of devices you control, never the open miner network. See `_comment_qvacCluster` in `config.example.json` for the fields.
+
 ---
 
 ## Architecture

@@ -22,6 +22,22 @@ const MAX_RESIDENT  = Math.max(1, parseInt(process.env.QVAC_MAX_RESIDENT || '2',
 const CTX_SIZE      = parseInt(process.env.QVAC_CTX_SIZE || '8192', 10);
 const ENABLED       = process.env.QVAC_DISABLED !== '1';
 
+// RPC cluster pooling (QVAC SDK 0.21+, "clustered inference over RPC" on
+// llama.cpp's RPC backend) — split one model's layers across several of a
+// person's OWN devices so a model too big for any single one of them can
+// load at all. Off unless a topic is set: the RPC channel is unauthenticated
+// by design, so this is for a private group of devices (same env/config on
+// each), never the open miner network. These are read as defaults for
+// standalone use; startClusterWorker()/discoverClusterPeers() also take an
+// explicit cfg object (e.g. from config.json's `qvacCluster`) that overrides them.
+const RPC_TOPIC        = process.env.QVAC_RPC_TOPIC || '';
+const RPC_ALLOW_REMOTE = process.env.QVAC_RPC_ALLOW_REMOTE === '1';
+const RPC_WORKER_ONLY  = process.env.QVAC_RPC_WORKER_ONLY === '1';
+const RPC_MIN_PEERS    = Math.max(1, parseInt(process.env.QVAC_RPC_MIN_PEERS || '1', 10));
+const RPC_MAX_DEVICES  = Math.min(16, Math.max(1, parseInt(process.env.QVAC_RPC_MAX_DEVICES || '8', 10))); // SDK caps a cluster at 16
+const RPC_DISCOVER_MS  = Math.max(500, parseInt(process.env.QVAC_RPC_DISCOVER_MS || '4000', 10));
+const RPC_HOST         = process.env.QVAC_RPC_HOST || undefined;
+
 // Friendly aliases → SDK constant names. Also maps legacy Ollama model ids
 // (e.g. from an old config.json) onto the default so nothing 404s.
 const ALIASES = {
@@ -33,7 +49,7 @@ const ALIASES = {
   'qwen3-8b':   'QWEN3_8B_INST_Q4_K_M',
   'smollm2-360m': 'SMOLLM2_360M_INST_Q8',
   'llama3.2-1b':  'LLAMA_3_2_1B_INST_Q4_0',
-  'llama-tool-1b': 'LLAMA_TOOL_CALLING_1B_INST_Q4_K',
+  'llama-tool-1b': 'LLAMA_TOOL_CALLING_1B_INST_Q4_K_M',
   'gpt-oss-20b':  'GPT_OSS_20B_INST_Q4_K_M',
   'qwen3-27b':    'QWEN3_6_27B_MULTIMODAL_Q4_K_XL',
   'qwen3-35b':    'QWEN3_6_35B_A3B_MULTIMODAL_Q4_K_M',
@@ -58,7 +74,7 @@ const BUILTIN_MODELS = [
   { name: 'smollm2-360m',  label: 'SmolLM2 360M (ultra-tiny)', constant: 'SMOLLM2_360M_INST_Q8' },
   { name: 'qwen3-0.6b',    label: 'Qwen3 0.6B (tiny)',         constant: 'QWEN3_600M_INST_Q4' },
   { name: 'llama3.2-1b',   label: 'Llama 3.2 1B',              constant: 'LLAMA_3_2_1B_INST_Q4_0' },
-  { name: 'llama-tool-1b', label: 'Llama Tool-Calling 1B',     constant: 'LLAMA_TOOL_CALLING_1B_INST_Q4_K' },
+  { name: 'llama-tool-1b', label: 'Llama Tool-Calling 1B',     constant: 'LLAMA_TOOL_CALLING_1B_INST_Q4_K_M' },
   { name: 'qwen3-1.7b',    label: 'Qwen3 1.7B (default)',      constant: 'QWEN3_1_7B_INST_Q4' },
   { name: 'qwen3-4b',      label: 'Qwen3 4B',                  constant: 'QWEN3_4B_INST_Q4_K_M' },
   { name: 'qwen3-8b',      label: 'Qwen3 8B',                  constant: 'QWEN3_8B_INST_Q4_K_M' },
@@ -77,6 +93,9 @@ const BUILTIN_MODELS = [
 let _sdk = null;
 const _loaded = new Map();        // canonicalName → { modelId, lastUsed }
 const _loadPromises = new Map();  // canonicalName → Promise<modelId>
+
+let _clusterServer = null;   // { serverId, topic } once this device is an RPC worker
+let _clusterStarting = null; // in-flight start, so concurrent callers don't double-start
 
 let _queue = Promise.resolve();
 function enqueue(fn) {
@@ -199,6 +218,92 @@ async function getSdk() {
   if (_sdk) return _sdk;
   _sdk = await import('@qvac/sdk');
   return _sdk;
+}
+
+// ── RPC cluster pooling ─────────────────────────────────────────────────────
+
+// Pure — takes already-discovered peer URLs and their device aliases (from
+// sdk.getRpcDeviceMap) and returns the modelConfig fields loadModel expects.
+// No SDK import needed, so this is unit-testable without the native addon.
+// Mirrors @qvac/sdk's own "clustered inference over RPC" example: one alias
+// per peer, equal tensor-split weight, split by layer (not within a layer).
+function buildClusterModelConfig(peerUrls, deviceAliases) {
+  if (!peerUrls?.length || peerUrls.length !== deviceAliases?.length) return null;
+  return {
+    device: 'gpu',
+    'rpc-servers': peerUrls.join(','),
+    devices: deviceAliases.join(','),
+    'split-mode': 'layer',
+    'tensor-split': deviceAliases.map(() => '1').join(','),
+  };
+}
+
+// Find other RPC workers on the same private topic. Never throws and never
+// hangs past discoverTimeoutMs — an empty result just means "load solo",
+// clustering must never be a hard dependency for inference to work at all.
+async function discoverClusterPeers(cfg = {}) {
+  const topic = cfg.topic ?? RPC_TOPIC;
+  if (!ENABLED || !topic) return [];
+  const timeoutMs = cfg.discoverTimeoutMs ?? RPC_DISCOVER_MS;
+  const maxDevices = Math.min(16, cfg.maxDevices ?? RPC_MAX_DEVICES);
+  try {
+    const sdk = await getSdk();
+    const found = await Promise.race([
+      sdk.discoverRpcServers({ topic }),
+      new Promise((resolve) => setTimeout(() => resolve([]), timeoutMs)),
+    ]);
+    return (found || []).sort((a, b) => a.url.localeCompare(b.url)).slice(0, maxDevices);
+  } catch (err) {
+    console.warn(`[qvac] Cluster peer discovery failed: ${err.message}`);
+    return [];
+  }
+}
+
+// Make this device an RPC worker others on the topic can split a model
+// across. Best-effort and idempotent: a failed/skipped start just leaves the
+// device running solo, same as today. The channel is unauthenticated, so
+// allowRemote defaults off (loopback-only) unless the caller opts in.
+async function startClusterWorker(cfg = {}) {
+  const topic = cfg.topic ?? RPC_TOPIC;
+  if (!ENABLED || !topic) return null;
+  if (_clusterServer) return _clusterServer;
+  if (_clusterStarting) return _clusterStarting;
+
+  const allowRemote = cfg.allowRemote ?? RPC_ALLOW_REMOTE;
+  const host = cfg.host ?? RPC_HOST;
+
+  _clusterStarting = (async () => {
+    try {
+      const sdk = await getSdk();
+      const server = await sdk.startRpcServer({
+        host,
+        allowNonLoopbackHost: allowRemote,
+        discoveryTopic: topic,
+      });
+      _clusterServer = { serverId: server.serverId, topic };
+      console.log(`[qvac] RPC cluster worker up on topic "${topic}"${allowRemote ? ' (reachable off-host)' : ' (loopback only)'}`);
+      return _clusterServer;
+    } catch (err) {
+      console.warn(`[qvac] Cluster worker failed to start: ${err.message}`);
+      return null;
+    } finally {
+      _clusterStarting = null;
+    }
+  })();
+  return _clusterStarting;
+}
+
+async function stopClusterWorker() {
+  if (!_clusterServer) return;
+  const { serverId } = _clusterServer;
+  _clusterServer = null;
+  try {
+    const sdk = await getSdk();
+    await sdk.stopRpcServer({ serverId });
+    console.log('[qvac] RPC cluster worker stopped');
+  } catch (err) {
+    console.warn(`[qvac] Cluster worker stop failed: ${err.message}`);
+  }
 }
 
 // ── Model name resolution ───────────────────────────────────────────────────
@@ -343,12 +448,12 @@ async function getModelId(requested) {
 
   if (_loadPromises.has(name)) return _loadPromises.get(name);
 
-  const loadOnce = async (src, label) => {
+  const loadOnce = async (src, label, clusterModelConfig) => {
     console.log(`[qvac] Loading model ${name}${label ? ` (${label})` : ''}...`);
     return sdk.loadModel({
       modelSrc: src,
       modelType: 'llm',
-      modelConfig: { ctx_size: CTX_SIZE, verbosity: 0 },
+      modelConfig: { ctx_size: CTX_SIZE, verbosity: 0, ...(clusterModelConfig || {}) },
       onProgress: (pr) => {
         const pct = pr && pr.percentage;
         if (pct == null) return;
@@ -360,17 +465,36 @@ async function getModelId(requested) {
     });
   };
 
+  // Opt-in multi-device pooling: if an RPC topic is configured and peers
+  // already answer on it, split this model's layers across them instead of
+  // loading solo. A worker-only device (lending memory, not initiating loads
+  // itself) and a device with no peers up both fall straight through to a
+  // normal single-device load — clustering is never a hard dependency.
+  let clusterModelConfig = null;
+  if (!RPC_WORKER_ONLY && RPC_TOPIC) {
+    const peers = await discoverClusterPeers();
+    if (peers.length >= RPC_MIN_PEERS) {
+      try {
+        const deviceMap = sdk.getRpcDeviceMap(peers);
+        clusterModelConfig = buildClusterModelConfig(peers.map((pr) => pr.url), deviceMap.map((d) => d.alias));
+        if (clusterModelConfig) console.log(`[qvac] Loading ${name} clustered across ${peers.length} RPC peer(s)`);
+      } catch (err) {
+        console.warn(`[qvac] Cluster device map failed, loading solo: ${err.message}`);
+      }
+    }
+  }
+
   const p = (async () => {
     _trackDownload(name, { state: 'downloading', pct: null, error: null, startedAt: Date.now(), finishedAt: null, requested });
     await evictIfNeeded(name);
     let modelId;
     try {
-      modelId = await loadOnce(modelSrc, fallbackSrc ? 'local blob' : '');
+      modelId = await loadOnce(modelSrc, fallbackSrc ? 'local blob' : '', clusterModelConfig);
     } catch (err) {
       // Local blob unusable (truncated/corrupt) — re-fetch via the registry.
       if (!fallbackSrc) throw err;
       console.warn(`[qvac] Local blob load failed (${err.message}) — retrying via registry`);
-      modelId = await loadOnce(fallbackSrc, 'registry');
+      modelId = await loadOnce(fallbackSrc, 'registry', clusterModelConfig);
     }
     _loaded.set(name, { modelId, lastUsed: Date.now() });
     _loadPromises.delete(name);
@@ -630,6 +754,12 @@ function status() {
     loaded: [..._loaded.keys()],
     circuitOpen: circuitOpen(),
     fault: _backendFault,
+    cluster: {
+      topic: RPC_TOPIC || null,
+      workerOnly: RPC_WORKER_ONLY,
+      workerRunning: !!_clusterServer,
+      allowRemote: RPC_ALLOW_REMOTE,
+    },
   };
 }
 
@@ -645,6 +775,10 @@ module.exports = {
   downloadModel,
   downloadStatus,
   status,
+  buildClusterModelConfig,
+  discoverClusterPeers,
+  startClusterWorker,
+  stopClusterWorker,
   estimatePromptTokens,
   estimateMessagesTokens,
   DEFAULT_MODEL,

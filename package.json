@@ -87,7 +87,7 @@
     "qrcode": "^1.5.4"
   },
   "optionalDependencies": {
-    "@qvac/sdk": "^0.16.0"
+    "@qvac/sdk": "^0.21.0"
   },
   "build": {
     "appId": "kg.iamai.daiminer",

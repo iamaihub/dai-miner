@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "bundleId": "6246adf17db887233bf53cae8f675bfea65c2157f156a41290367e475c07b6f7",
+  "bundleId": "e6f0ba0c1c231a2d86fa98c2a8660ac2d62ff3838177650f312106f9fcebc54d",
   "addons": [
     "@qvac/llm-llamacpp",
     "bare-buffer",
