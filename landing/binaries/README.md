@@ -20,32 +20,48 @@ Once the file is here:
 
 ## How to build the APK (DAI Wallet with branding + full i18n + src/ structure)
 
-From the `dai-miner-wallet` directory:
+From the `dev/wallet` directory (sibling of this `dev/node` repo):
 
 ```bash
-cd ../dai-miner-wallet
-
-# Recommended (EAS Build - produces preview APK for sideloading):
-npm run build:android          # uses "preview" profile -> internal APK
-# or for production AAB:
-# npm run build:android:prod
-
-# After build completes in EAS dashboard, download the .apk artifact
-# and place it here as:
-#   landing/binaries/dai-miner-wallet.apk
+cd ../wallet
+npm run release:apk
 ```
 
-The `eas.json` defines the profiles; `app.json` + `assets/icon.png` etc. ensure "DAI Wallet" name and logo.
+This runs `eas build --platform android --profile preview --local` with the
+Android SDK path it actually needs, and writes the finished apk straight to
+`landing/binaries/dai-miner-wallet.apk` in this repo — no expo.dev upload, so
+there's no EAS artifact-retention window for it to expire out from under the
+download link. See `dev/wallet/scripts/release-apk.sh` for details/overrides.
 
-Local alternative (if you have Android SDK set up):
+Bump the `?v=` cache-busting query in `landing/wallet/index.html` and
+`landing/miner.html` if the build's actual content changed, then deploy:
+`./scripts/deploy-landing.sh` (or `publish-to-ipfs.sh`).
+
+`eas.json`'s `preview` profile is what makes it a sideloadable `.apk` instead
+of a Play-Store `.aab`; `app.json` + `assets/icon.png` etc. set the "DAI
+Wallet" name/logo.
+
+### Old flow (EAS cloud build) — avoid, artifacts expire
+
+```bash
+cd ../wallet
+npm run build:android          # uploads to EAS; produces a preview .apk
+# Download the .apk from the EAS dashboard before it expires, then:
+#   cp ~/Downloads/build-*.apk landing/binaries/dai-miner-wallet.apk
+```
+
+This is the reason the apk has gone missing before: expo.dev deletes build
+artifacts after its retention window, and nothing re-copies a fresh one
+automatically. Prefer `npm run release:apk` above.
+
+### Raw gradle (if you want to skip the eas-cli wrapper entirely)
 ```bash
 npm run prebuild
 cd android
 ./gradlew assembleRelease   # or assembleDebug
 # then find the .apk under app/build/outputs/...
 ```
-
-Then copy/rename the APK into `landing/binaries/dai-miner-wallet.apk` so that
+Copy/rename it into `landing/binaries/dai-miner-wallet.apk` so that
 `publish-to-ipfs.sh` and `deploy-landing.sh` will include it.
 
 ## Other files
