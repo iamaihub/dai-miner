@@ -16,6 +16,7 @@ import { ScanRequest, ScanResult } from './core/scanRequest.js';
 import { DAIBlock } from './core/block.js';
 import { JobQueue } from './jobs/job-queue.js';
 import { computeBoardJobPaymentHash } from './jobs/board-payment.js';
+import { RACE_REPLICAS, CLAIM_LEASE_MS } from './jobs/job-board.js';
 import { detectMyCountry, getCountryProximityMultiplier } from './jobs/geo.js';
 import { getMethodsManager } from './signals/methods-manager.js';
 import { P2PGossip } from './network/p2p-gossip.js';
@@ -472,6 +473,15 @@ export class DAIMinerNode {
     this._gossipedJobTransitions = new Set(); // jobId:type keys — prevents duplicate pendingBrainTransitions from gossip
     this._activeJobId    = null; // job currently being computed (null = idle)
     this._pendingJobQueue = [];  // jobs waiting for the active slot, sorted by priority
+    // Gossip-reconstructed view of job-board.js's `racers` map: jobId -> Map<claimant, claimedAt>.
+    // Built entirely from 'job-claim-intent' envelopes (plus our own claims) so a paid
+    // (compute/skill) job racing over gossip — no bootnode board involved — still bounds
+    // itself to RACE_REPLICAS concurrent workers instead of every idle miner on the
+    // network computing it. Entries age out after CLAIM_LEASE_MS, same lease the board
+    // uses to reclaim a slot from a crashed racer. This is a best-effort bound, not an
+    // exact one: gossip delivery is best-effort and can lag, so a burst of simultaneous
+    // claims from nodes that haven't heard about each other yet can briefly overshoot.
+    this._liveClaims = new Map();
     this._pendingProposals = new Map(); // auditJobId → { manifest, code, context, proposerAddress }
 
     // Future: TEE attestation could further strengthen these guarantees
@@ -6097,6 +6107,16 @@ export class DAIMinerNode {
         this._pendingJobQueue.splice(idx, 1);
         console.log(`[DAI-Miner] Job ${jobId} claimed by peer — removed from pending queue (${this._pendingJobQueue.length} remaining)`);
       }
+      this._liveClaims.delete(jobId); // done — free the race-slot bookkeeping
+    });
+
+    // A peer has started (not finished) racing a paid job — the gossip-side
+    // equivalent of job-board.js's claim(). Used only to bound concurrent racers
+    // to RACE_REPLICAS before *we* start computing (see _startJob); it never stops
+    // or cancels a run already in progress — that's still first-result-wins via
+    // 'job-result' below.
+    this.gossip.subscribe('job-claim-intent', ({ jobId, claimant, ts }) => {
+      this._recordClaim(jobId, claimant, ts);
     });
 
     // First-result-wins. The first miner to finish publishes 'job-result'; it
@@ -6122,6 +6142,7 @@ export class DAIMinerNode {
       const idx = this._pendingJobQueue.findIndex(j => j.id === jobId);
       if (idx !== -1) this._pendingJobQueue.splice(idx, 1);
       if (this._activeJobId === jobId) this._supersededJobs.add(jobId);  // cancel the in-flight run
+      this._liveClaims.delete(jobId); // done — free the race-slot bookkeeping
     });
 
     // Job lifecycle transitions — economic types must originate locally, not via gossip
@@ -7598,16 +7619,80 @@ export class DAIMinerNode {
         );
         console.log(`[DAI-Miner] Job ${job.id} queued (slot busy with ${this._activeJobId}, queue depth: ${this._pendingJobQueue.length})`);
       }
-    } else {
-      this._startJob(job);
+    } else if (!this._startJob(job)) {
+      this._drainJobQueue();
     }
   }
 
+  // A fee-gated job with a budget races like job-board.js's paid auction (RACE_FULL),
+  // not like a free 'verdict' job shared cooperatively — see job-board.js:57-59.
+  _isPaidRaceJob(job) { return FEE_REQUIRED_JOB_TYPES.has(job?.type) && (job?.maxBudget || 0) > 0; }
+
+  // Record a (jobId, claimant) race slot, ours or a peer's, from a 'job-claim-intent'
+  // envelope. Mirrors job-board.js's `racers: Map<worker, claimedAt>` per job.
+  _recordClaim(jobId, claimant, ts = Date.now()) {
+    if (!jobId || !claimant) return;
+    let m = this._liveClaims.get(jobId);
+    if (!m) { m = new Map(); this._liveClaims.set(jobId, m); }
+    m.set(claimant, ts);
+    this._sweepLiveClaims(ts);
+  }
+
+  // Most jobs get an explicit delete() on done (job-claimed/job-result above). This
+  // only catches orphans — a claim-intent for a job this node never otherwise hears
+  // resolved — so entries don't accumulate for the life of the process. Throttled to
+  // once per lease window since it's an O(jobs) scan.
+  _sweepLiveClaims(now) {
+    if (this._liveClaims.size === 0) return;
+    if (this._lastClaimSweep && now - this._lastClaimSweep < CLAIM_LEASE_MS) return;
+    this._lastClaimSweep = now;
+    const staleAfter = CLAIM_LEASE_MS * 10;
+    for (const [jobId, m] of this._liveClaims) {
+      let newest = 0;
+      for (const at of m.values()) if (at > newest) newest = at;
+      if (now - newest > staleAfter) this._liveClaims.delete(jobId);
+    }
+  }
+
+  // Count claims not yet past CLAIM_LEASE_MS — a crashed/slow racer's slot ages out
+  // and frees up for someone else, exactly as job-board.js's `_liveRacers` does.
+  _liveClaimCount(jobId, now = Date.now()) {
+    const m = this._liveClaims.get(jobId);
+    if (!m) return 0;
+    let n = 0;
+    for (const at of m.values()) if (now - at <= CLAIM_LEASE_MS) n++;
+    return n;
+  }
+
+  // Returns true if the job was actually started. False means the caller should try
+  // the next pending job instead of going idle (race-full is not "no work available").
   _startJob(job) {
+    let startDelayMs = 0;
+    if (this._isPaidRaceJob(job)) {
+      const now = Date.now();
+      const liveCount = this._liveClaimCount(job.id, now);
+      if (liveCount >= RACE_REPLICAS) {
+        console.log(`[DAI-Miner] Skipping ${job.id} — race full (${liveCount}/${RACE_REPLICAS} claimed via gossip)`);
+        this._updateJob(job.id, { status: 'ignored', error: 'race full (RACE_REPLICAS already claimed via gossip)' });
+        return false;
+      }
+      // Claim before computing, not after — lets peers (reachable over the fast
+      // Hyperswarm path) learn about this slot before they'd otherwise burn GPU
+      // starting the same job. Record locally too: don't wait on a gossip self-echo.
+      this._recordClaim(job.id, this.config.wallet, now);
+      this.gossip.publish('job-claim-intent', { jobId: job.id, claimant: this.config.wallet, ts: now }).catch(() => {});
+      // Best-effort de-thundering: the more racers we already knew about at claim
+      // time, the longer we wait before actually spending compute, giving slightly
+      // slower claim-intents more time to arrive and lower the odds every racer
+      // started before any of them heard about the others. Not a hard guarantee —
+      // gossip can still lag past this window — just cheap, bounded mitigation.
+      startDelayMs = liveCount * 400 + Math.floor(Math.random() * 300);
+    }
     this._activeJobId = job.id;
-    this._processJobInBackground(job).catch(e => {
+    this._processJobInBackground(job, startDelayMs).catch(e => {
       console.error('[job bg]', e.message);
     });
+    return true;
   }
 
   _drainJobQueue() {
@@ -7622,7 +7707,7 @@ export class DAIMinerNode {
         console.log(`[DAI-Miner] Skipping ${next.id} — already processed`);
         continue;
       }
-      this._startJob(next);
+      if (!this._startJob(next)) continue;
       return;
     }
     console.log('[DAI-Miner] Job queue drained — idle');
@@ -8909,8 +8994,9 @@ export class DAIMinerNode {
     }
   }
 
-  async _processJobInBackground(job) {
+  async _processJobInBackground(job, startDelayMs = 0) {
     const jobId = job.id;
+    if (startDelayMs > 0) await new Promise(r => setTimeout(r, startDelayMs));
     this._updateJob(jobId, { status: 'computing' });
     try {
       await this.computeAndSubmitJob(job);
