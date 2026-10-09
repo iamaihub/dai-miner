@@ -65,7 +65,7 @@
   ],
   "license": "MIT",
   "devDependencies": {
-    "@qvac/cli": "^0.2.4",
+    "@qvac/cli": "^0.15.0",
     "@yao-pkg/pkg": "^5.8.1",
     "electron": "^31.4.0",
     "electron-builder": "^24.13.3",
