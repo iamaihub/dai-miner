@@ -190,6 +190,98 @@ export const DEFAULT_HTTP_MCPS = {
       { name: 'hf_fs', summary: 'Browse Hub papers, trending models and collections', triggers: ['trending models', 'daily papers', 'huggingface papers'], argKeys: ['operations'] },
     ],
   },
+
+  // ── Auth-less market and docs MCPs added in 0.4.40 ─────────────────────────
+  // Each one accepted initialize → tools/list → tools/call on 2026-10-11 with
+  // no API key and no Authorization header. Seed cards are the read tools that
+  // call succeeded for, or the same server's other read tools with the argument
+  // names tools/list returned. Paid or key-gated siblings are not listed.
+  coingecko: {
+    url: 'https://mcp.api.coingecko.com/mcp',
+    homepage: 'https://docs.coingecko.com/ai-integration/mcp-server',
+    summary: 'CoinGecko free MCP: prices, markets and SDK docs (no API key)',
+    tags: ['crypto', 'prices', 'market'],
+    triggers: ['coingecko', 'coin price', 'token price', 'market cap'],
+    tools: [
+      { name: 'search_docs', summary: 'Find CoinGecko API methods and parameters', triggers: ['coingecko docs', 'coingecko api'], argKeys: ['query', 'language'] },
+      { name: 'execute', summary: 'Run a CoinGecko API call (simple price, markets, trending) on their hosted SDK', triggers: ['bitcoin price', 'token price', 'coingecko price'], argKeys: ['code', 'intent'] },
+    ],
+  },
+  coinpaprika: {
+    url: 'https://mcp.coinpaprika.com/streamable-http',
+    homepage: 'https://github.com/coinpaprika/coinpaprika-mcp',
+    summary: 'CoinPaprika market stats, tickers, exchanges and coin search (free tier, no key)',
+    tags: ['crypto', 'prices', 'market'],
+    triggers: ['coinpaprika', 'crypto ticker', 'bitcoin dominance', 'exchange volume'],
+    tools: [
+      { name: 'getGlobal', summary: 'Global market cap, volume and bitcoin dominance', triggers: ['market cap', 'bitcoin dominance', 'crypto global'], argKeys: ['rationale'] },
+      { name: 'getTickers', summary: 'Latest tickers for many coins', triggers: ['crypto tickers', 'coin prices'], argKeys: ['quotes', 'limit', 'rationale'] },
+      { name: 'search', summary: 'Search coins, exchanges and tags', triggers: ['search coin', 'find token'], argKeys: ['q', 'rationale'] },
+      { name: 'priceConverter', summary: 'Convert an amount between two CoinPaprika currencies', triggers: ['convert crypto', 'price convert'], argKeys: ['baseCurrencyId', 'quoteCurrencyId', 'amount', 'rationale'] },
+    ],
+  },
+  dexpaprika: {
+    url: 'https://mcp.dexpaprika.com/streamable-http',
+    homepage: 'https://github.com/coinpaprika/dexpaprika-mcp',
+    summary: 'DexPaprika on-chain pools, DEX volume and token prices across indexed networks (no key)',
+    tags: ['crypto', 'dex', 'pools'],
+    triggers: ['dexpaprika', 'dex pool', 'liquidity pool', 'on-chain price'],
+    tools: [
+      { name: 'getNetworks', summary: 'List blockchains DexPaprika indexes, with 24h volume', triggers: ['dex networks', 'which chains'], argKeys: ['rationale'] },
+      { name: 'getStats', summary: 'Aggregate DexPaprika stats', triggers: ['dex stats', 'dex volume'], argKeys: ['rationale'] },
+      { name: 'search', summary: 'Search pools and tokens', triggers: ['search pool', 'find pool'], argKeys: ['query', 'rationale'] },
+      { name: 'getTokenDetails', summary: 'Token details on one network', triggers: ['token details', 'pool token'], argKeys: ['network', 'token_address', 'rationale'] },
+    ],
+  },
+  'crypto-com': {
+    url: 'https://mcp.crypto.com/market-data/mcp',
+    homepage: 'https://mcp.crypto.com/docs/getting-started',
+    summary: 'Crypto.com exchange instruments, tickers and order books (no account)',
+    tags: ['crypto', 'exchange', 'market'],
+    triggers: ['crypto.com', 'crypto com', 'exchange ticker', 'order book'],
+    tools: [
+      { name: 'get_instruments', summary: 'List Crypto.com trading instruments', triggers: ['crypto.com pairs', 'list instruments'], argKeys: [] },
+      { name: 'get_tickers', summary: 'Tickers for one instrument or all of them', triggers: ['crypto.com ticker', '24h ticker'], argKeys: ['instrument_name'] },
+      { name: 'get_book', summary: 'Order book snapshot for an instrument', triggers: ['order book', 'bids asks'], argKeys: ['instrument_name', 'depth'] },
+      { name: 'get_candlestick', summary: 'Recent candlesticks for an instrument', triggers: ['candles', 'ohlc'], argKeys: ['instrument_name', 'timeframe'] },
+    ],
+  },
+  lifi: {
+    url: 'https://mcp.li.quest/mcp',
+    homepage: 'https://docs.li.fi/mcp-server/overview',
+    summary: 'LI.FI chains, routes and unsigned cross-chain quotes (public rate limit, no key)',
+    tags: ['crypto', 'bridge', 'swap'],
+    triggers: ['lifi', 'li.fi', 'cross chain', 'bridge quote', 'swap route'],
+    tools: [
+      { name: 'get-chains', summary: 'Chains LI.FI can route across', triggers: ['lifi chains', 'supported chains'], argKeys: ['chainTypes'] },
+      { name: 'get-connections', summary: 'Which token pairs have a route', triggers: ['bridge route', 'can I bridge'], argKeys: ['fromChain', 'toChain', 'fromToken', 'toToken'] },
+      { name: 'get-chain-by-name', summary: 'Look up one chain by name or key', triggers: ['which chain id', 'lifi chain'], argKeys: ['name'] },
+      { name: 'get-gas-prices', summary: 'Gas prices LI.FI reports for EVM chains', triggers: ['gas price', 'lifi gas'], argKeys: [] },
+    ],
+  },
+  avalanche: {
+    url: 'https://build.avax.network/api/mcp',
+    homepage: 'https://build.avax.network/docs/tooling/ai-llm/mcp-server',
+    summary: 'Avalanche docs, academy, RPC method lookup and public chain reads (no key)',
+    tags: ['crypto', 'avalanche', 'docs'],
+    triggers: ['avalanche', 'avax', 'subnet', 'c-chain'],
+    tools: [
+      { name: 'docs_search', summary: 'Search Avalanche docs, academy and blog', triggers: ['avalanche docs', 'avax docs'], argKeys: ['query'] },
+      { name: 'docs_fetch', summary: 'Fetch one Avalanche docs page as markdown', triggers: ['avalanche page'], argKeys: ['url'] },
+      { name: 'docs_list_sections', summary: 'List Avalanche documentation sections', triggers: ['avalanche sections'], argKeys: [] },
+      { name: 'rpc_lookup_method', summary: 'Look up an Avalanche RPC method', triggers: ['avalanche rpc', 'c-chain method'], argKeys: ['query'] },
+    ],
+  },
+  layerzero: {
+    url: 'https://docs.layerzero.network/mcp',
+    homepage: 'https://docs.layerzero.network/v2/tools/mcp/overview',
+    summary: 'Search the LayerZero docs (OFT, endpoints, message libraries). No key.',
+    tags: ['crypto', 'layerzero', 'docs'],
+    triggers: ['layerzero', 'layer zero', 'oft', 'omnichain'],
+    tools: [
+      { name: 'search_layer_zero', summary: 'Search LayerZero docs, code examples and API references', triggers: ['layerzero docs', 'what is an oft', 'omnichain token'], argKeys: ['query'] },
+    ],
+  },
 };
 
 export function defaultHttpSpecs({ disabled = [] } = {}) {

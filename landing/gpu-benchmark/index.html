@@ -142,7 +142,7 @@
 
   <div class="earned" id="earned"></div>
 
-  <a class="start" id="startBtn" href="https://iamai.kg" target="_blank" rel="noopener">
+  <a class="start" id="startBtn" href="../index.html">
     <span data-i18n="start">Start Earning</span><span class="arw" aria-hidden="true">→</span></a>
 
   <div class="chips" id="chips">
@@ -591,6 +591,9 @@ async function spin(){
   }, 1500);
 }
 
+$('startBtn').addEventListener('click', () => {
+  try { localStorage.setItem('dai_real_landing', '1'); } catch (e) {}
+});
 $('hub').addEventListener('click', spin);
 $('elecInput').addEventListener('input', e=>{
   const v=parseFloat(e.target.value); if(!isNaN(v)&&v>=0){ state.elec=v; if(state.ready) renderNumbers(); }

@@ -1,4 +1,4 @@
-module github.com/poh/poh-miner-network/tendermint-prototype
+module github.com/iamaihub/dai-miner/tendermint-prototype
 
 go 1.21
 

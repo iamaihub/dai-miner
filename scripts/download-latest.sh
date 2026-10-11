@@ -78,4 +78,4 @@ else
 fi
 
 echo ""
-echo "Source + build scripts: https://github.com/Proof-of-Human-Network/poh-miner"
+echo "Source + build scripts: https://github.com/iamaihub/dai-miner"

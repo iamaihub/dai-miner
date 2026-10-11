@@ -500,11 +500,11 @@
           </div>
           <div data-i18n="mnr.dl.linux.desc" class="text-sm text-[#525252] mb-4 flex-1">Portable AppImage — one file, runs on any distro. Download → chmod +x → double-click or run from anywhere. No root install.</div>
           <div class="flex flex-col gap-2">
-            <a href="https://github.com/Proof-of-Human-Network/poh-miner/releases/latest/download/dai-miner-linux-x64.AppImage" download="dai-miner-linux-x64.AppImage" data-i18n="mnr.dl.linux.btn1"
+            <a href="https://github.com/iamaihub/dai-miner/releases/latest/download/dai-miner-linux-x64.AppImage" download="dai-miner-linux-x64.AppImage" data-i18n="mnr.dl.linux.btn1"
                class="block w-full text-center bg-[#16a34a] text-white hover:bg-black transition py-3 rounded-[4px] text-sm font-medium">
               Download AppImage (x64)
             </a>
-            <a href="https://github.com/Proof-of-Human-Network/poh-miner/releases/latest/download/dai-miner-linux-arm64.AppImage" download="dai-miner-linux-arm64.AppImage" data-i18n="mnr.dl.linux.btn2"
+            <a href="https://github.com/iamaihub/dai-miner/releases/latest/download/dai-miner-linux-arm64.AppImage" download="dai-miner-linux-arm64.AppImage" data-i18n="mnr.dl.linux.btn2"
                class="block w-full text-center border border-black/20 hover:bg-black/5 text-[#171717] py-3 rounded-[4px] text-sm font-medium transition">
               Download AppImage (ARM64)
             </a>
@@ -521,11 +521,11 @@
           </div>
           <div data-i18n="mnr.dl.mac.desc" class="text-sm text-[#525252] mb-3 flex-1">Open .dmg → drag to Applications • may need “Open Anyway” in Security &amp; Privacy</div>
           <div class="flex flex-col gap-2">
-            <a href="https://github.com/Proof-of-Human-Network/poh-miner/releases/latest/download/dai-miner-macos-amd.dmg" download="dai-miner-macos-amd.dmg" data-i18n="mnr.dl.mac.btn1"
+            <a href="https://github.com/iamaihub/dai-miner/releases/latest/download/dai-miner-macos-amd.dmg" download="dai-miner-macos-amd.dmg" data-i18n="mnr.dl.mac.btn1"
                class="block w-full text-center bg-[#16a34a] text-white hover:bg-black transition py-3 rounded-[4px] text-sm font-medium">
               Download Apple Silicon .dmg
             </a>
-            <a href="https://github.com/Proof-of-Human-Network/poh-miner/releases/latest/download/dai-miner-macos-intel.dmg" download="dai-miner-macos-intel.dmg" data-i18n="mnr.dl.mac.btn2"
+            <a href="https://github.com/iamaihub/dai-miner/releases/latest/download/dai-miner-macos-intel.dmg" download="dai-miner-macos-intel.dmg" data-i18n="mnr.dl.mac.btn2"
                class="block w-full text-center border border-black/20 hover:bg-black/5 text-[#171717] py-3 rounded-[4px] text-sm font-medium transition">
               Download Intel .dmg installer
             </a>
@@ -541,7 +541,7 @@
             </div>
           </div>
           <div data-i18n="mnr.dl.win.desc" class="text-sm text-[#525252] mb-4 flex-1">Standard .exe installer with shortcuts, Start Menu entry, and clean uninstaller. Built with NSIS.</div>
-          <a href="https://github.com/Proof-of-Human-Network/poh-miner/releases/latest/download/dai-miner-windows-x64.exe" download="dai-miner-windows-x64.exe" data-i18n="mnr.dl.win.btn"
+          <a href="https://github.com/iamaihub/dai-miner/releases/latest/download/dai-miner-windows-x64.exe" download="dai-miner-windows-x64.exe" data-i18n="mnr.dl.win.btn"
              class="block w-full text-center bg-[#16a34a] text-white hover:bg-black transition py-3 rounded-[4px] text-sm font-medium">
             Download Windows Installer
           </a>
@@ -559,7 +559,7 @@
           <span class="text-[#a3a3a3]">•</span>
           <a href="scripts/download-latest.sh" download="download-latest.sh" data-i18n="mnr.dl.power.link2" class="text-[#16a34a] hover:underline">download-latest.sh (picks binary)</a>
           <span class="text-[#a3a3a3]">•</span>
-          <a href="https://github.com/Proof-of-Human-Network/poh-miner" target="_blank" data-i18n="mnr.dl.power.link3" class="text-[#525252] hover:text-[#171717]">View build scripts + source</a>
+          <a href="https://github.com/iamaihub/dai-miner" target="_blank" data-i18n="mnr.dl.power.link3" class="text-[#525252] hover:text-[#171717]">View build scripts + source</a>
         </div>
       </div>
 
@@ -690,14 +690,14 @@
         <a href="https://iamai.kg" class="hover:text-[#171717]">iamai.kg</a>
         <a href="https://t.me/iamaihub" target="_blank" rel="noopener" class="hover:text-[#171717]">Telegram</a>
         <a href="https://x.com/iamaihub" target="_blank" rel="noopener" class="hover:text-[#171717]">X</a>
-        <a href="https://github.com/Proof-of-Human-Network" target="_blank" class="hover:text-[#171717]">GitHub</a>
+        <a href="https://github.com/iamaihub" target="_blank" class="hover:text-[#171717]">GitHub</a>
       </div>
     </div>
   </footer>
 
   <script>
     function copyInstallCommand(button) {
-      const command = 'curl -fsSL https://raw.githubusercontent.com/poh/poh-miner-network/main/scripts/easy-start.sh | bash';
+      const command = 'curl -fsSL https://raw.githubusercontent.com/iamaihub/dai-miner/main/scripts/easy-start.sh | bash';
       navigator.clipboard.writeText(command).then(() => {
         const originalText = button.textContent;
         button.textContent = 'Copied!';

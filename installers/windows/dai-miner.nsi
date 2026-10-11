@@ -14,8 +14,8 @@
 !define VERSIONMAJOR 0
 !define VERSIONMINOR 1
 !define VERSIONPATCH 0
-!define HELPURL "https://github.com/poh/poh-miner-network"
-!define UPDATEURL "https://github.com/poh/poh-miner-network/releases"
+!define HELPURL "https://github.com/iamaihub/dai-miner"
+!define UPDATEURL "https://github.com/iamaihub/dai-miner/releases"
 !define ABOUTURL "https://iamai.kg"
 
 !define INSTALLSIZE 15000 ; approximate in KB

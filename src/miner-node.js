@@ -334,6 +334,10 @@ const DEFAULT_ENABLED_SKILLS = new Set([
   'sol_ranger_finance', 'sol_raydium', 'sol_sanctum', 'sol_sol_incinerator',
   'sol_solana_agent_kit', 'sol_solana_kit', 'sol_solana_kit_migration',
   'sol_squads', 'sol_surfpool', 'sol_svm', 'sol_switchboard', 'sol_wallet_analysis',
+
+  // Euler Finance V2 reference packs (euler-xyz/agent-skills, MIT). Knowledge
+  // only — quoting a vault still needs the user's own wallet.
+  'euler_vaults', 'euler_data', 'euler_irm_oracles', 'euler_earn', 'euler_advanced', 'euler_sdk',
 ]);
 
 // Job types that require a paid, signature-verified fee before the node will

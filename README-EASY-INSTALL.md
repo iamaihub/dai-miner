@@ -5,7 +5,7 @@ This guide is written for normal humans — not just hardcore miners.
 ## One-Line Install (Recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/poh/poh-miner-network/main/scripts/easy-start.sh | bash
+curl -fsSL https://raw.githubusercontent.com/iamaihub/dai-miner/main/scripts/easy-start.sh | bash
 ```
 
 This script will:

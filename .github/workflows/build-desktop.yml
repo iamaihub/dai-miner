@@ -3,7 +3,7 @@ name: Build Desktop (Electron)
 # Builds DAI-Miner for Linux, macOS, and Windows on GitHub runners, renames the
 # outputs to STABLE (version-less) asset names, and attaches them to the GitHub
 # Release for the pushed tag. The landing page links to
-#   https://github.com/Proof-of-Human-Network/poh-miner/releases/latest/download/<stable-name>
+#   https://github.com/iamaihub/dai-miner/releases/latest/download/<stable-name>
 # which always resolves to the newest release — so no manual uploads, ever.
 #
 # Trigger: push a version tag (v0.4.6, …) or run manually from the Actions tab.

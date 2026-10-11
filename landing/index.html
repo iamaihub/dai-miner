@@ -2,7 +2,15 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="refresh" content="0; url=gpu-benchmark/index.html">
+  <script>
+    /* First visit lands on the GPU benchmark. Start Earning sets this flag;
+       afterwards this page stays, until the browser's site data is cleared. */
+    try {
+      if (localStorage.getItem('dai_real_landing') !== '1') {
+        location.replace('gpu-benchmark/index.html');
+      }
+    } catch (e) {}
+  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>DAI (Decentralized Artificial Intelligence) • Modular AI Network, Owned by Its Community</title>
   <meta name="description" content="DAI — Decentralized Artificial Intelligence. A sovereign network you govern. Influence what AI does at the protocol — not through a corporation.">

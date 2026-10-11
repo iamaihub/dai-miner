@@ -13,7 +13,7 @@ $IPFSGateways = @(
     "https://gateway.pinata.cloud/ipfs/$IPFSCid",
     "https://cloudflare-ipfs.com/ipfs/$IPFSCid"
 )
-$GITHUB_RAW = "https://raw.githubusercontent.com/poh/poh-miner-network/main"
+$GITHUB_RAW = "https://raw.githubusercontent.com/iamaihub/dai-miner/main"
 
 Write-Host "DAI Miner Network - Windows Setup" -ForegroundColor Cyan
 Write-Host ""
