@@ -4987,8 +4987,8 @@ function updateSendSummary() {
   const to = (document.getElementById('send-to')?.value || '').trim();
   const asset = _sendAsset();
   const dp = asset.decimals === 2 ? 2 : 4;
-  const dispEl = document.getElementById('amount-display');
-  if (dispEl) dispEl.textContent = amount > 0 ? amount.toFixed(2) : '0.00';
+  // #send-amount IS the big display now (see index.html) — it already shows what was typed,
+  // so there's no separate display element to re-sync here.
   const unitEl = document.getElementById('amount-display-unit');
   if (unitEl) unitEl.textContent = asset.display;
   const sumAmt = document.getElementById('summary-amount');

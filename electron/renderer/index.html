@@ -205,12 +205,16 @@
     .send-field label { display: block; font-family: monospace; font-size: 9px; letter-spacing: 1.5px; color: #4b5563; margin-bottom: 6px; text-transform: uppercase; }
     .send-from-box { font-family: monospace; font-size: 11px; color: #9ca3af; padding: 8px 12px; background: #111; border: 1px solid #1c1c1c; border-radius: 4px; }
     .send-balance-hint { font-family: monospace; font-size: 10px; color: #374151; margin-top: 4px; }
-    #send-to, #send-amount {
+    #send-to {
       width: 100%; background: #111; border: 1px solid #252525; border-radius: 4px;
       color: #e5e7eb; font-size: 12px; font-family: monospace; padding: 10px 14px;
       outline: none; transition: border-color 0.15s; box-sizing: border-box;
     }
-    #send-to:focus, #send-amount:focus { border-color: #22c55e; }
+    #send-to:focus { border-color: #22c55e; }
+    /* #send-amount now lives inside .amount-display-box (see those rules) and is styled as
+       the big display itself, not a regular field — it no longer shares #send-to's styling. */
+    #send-amount { -moz-appearance: textfield; }
+    #send-amount::-webkit-outer-spin-button, #send-amount::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
     .amount-row { display: flex; align-items: center; gap: 8px; }
     .dai-unit { font-family: monospace; font-size: 11px; color: #22c55e; }
     .quick-btns { display: flex; gap: 6px; margin-top: 8px; }
@@ -1589,12 +1593,11 @@
             <div class="send-field">
               <label data-i18n="send.amount">AMOUNT</label>
               <div class="amount-display-box">
-                <div class="amount-display-num" id="amount-display">0.00</div>
+                <input id="send-amount" class="amount-display-num" type="number" placeholder="0.00" min="0" step="0.01"
+                       style="width:100%;background:transparent;border:none;outline:none;text-align:center;"
+                       oninput="updateSendSummary()" />
                 <div class="amount-display-unit" id="amount-display-unit">DAI</div>
               </div>
-              <input id="send-amount" type="number" placeholder="0.00" min="0" step="0.01"
-                     style="width:100%;background:#111;border:1px solid #252525;border-radius:4px;color:#e5e7eb;font-size:12px;font-family:monospace;padding:9px 12px;outline:none;box-sizing:border-box;margin-bottom:8px;"
-                     oninput="updateSendSummary()" />
               <div class="quick-btns">
                 <button class="quick-btn send-quick-amt" onclick="setSendAmount(1)">1</button>
                 <button class="quick-btn send-quick-amt" onclick="setSendAmount(5)">5</button>
