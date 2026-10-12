@@ -255,9 +255,10 @@ describe('default HTTP MCPs', () => {
   it('ships the unauthenticated servers as catalog seed cards', () => {
     expect(Object.keys(DEFAULT_HTTP_MCPS).sort()).toEqual([
       'ai-portal', 'airshelf', 'akari', 'akari-trust', 'avalanche', 'aws-knowledge',
-      'cloudflare-docs', 'coingecko', 'coinpaprika', 'context7', 'crypto-com',
-      'deepwiki', 'dexpaprika', 'gitmcp', 'goji',
-      'huggingface', 'inside-ads', 'layerzero', 'lifi', 'microsoft-learn', 'solana', 'tandem',
+      'circle', 'cloudflare-docs', 'coingecko', 'coinpaprika', 'context7', 'crypto-com',
+      'deepwiki', 'dexpaprika', 'dflow', 'gate-docs', 'gate-info', 'gate-market', 'gate-news',
+      'gitmcp', 'goji', 'huggingface', 'inside-ads', 'layerzero', 'lifi', 'microsoft-learn',
+      'neynar', 'philidor', 'privy', 'solana', 'tandem', 'zerion',
     ]);
     const cards = defaultHttpSeedCards();
     expect(cards.some(c => c.mcpId === 'tandem' && c.tool === 'search_docs')).toBe(true);

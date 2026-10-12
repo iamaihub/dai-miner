@@ -282,6 +282,130 @@ export const DEFAULT_HTTP_MCPS = {
       { name: 'search_layer_zero', summary: 'Search LayerZero docs, code examples and API references', triggers: ['layerzero docs', 'what is an oft', 'omnichain token'], argKeys: ['query'] },
     ],
   },
+
+  // ── Auth-less Hive-list MCPs checked 2026-10-12 ────────────────────────────
+  // initialize → tools/list → tools/call, no API key. Seed cards are the read
+  // tools that call succeeded for, plus sibling read tools from that same list.
+  // Servers that 401, start a purchase, or require a user token are not here.
+  philidor: {
+    url: 'https://mcp.philidor.io/api/mcp',
+    homepage: 'https://docs.philidor.io/docs/mcp',
+    summary: 'Philidor DeFi vault and lending-market risk scores (no key)',
+    tags: ['crypto', 'defi', 'risk'],
+    triggers: ['philidor', 'vault risk', 'defi vault'],
+    tools: [
+      { name: 'search_vaults', summary: 'Search DeFi vaults by chain, protocol, asset and risk tier', triggers: ['search vaults', 'vault risk score'], argKeys: ['query', 'chain', 'protocol', 'asset', 'riskTier', 'minTvl'] },
+      { name: 'get_vault', summary: 'One vault by id or by network and address, with risk breakdown', triggers: ['vault details', 'vault risk breakdown'], argKeys: ['id', 'network', 'address'] },
+      { name: 'find_safest_vaults', summary: 'Highest-scored audited vaults, optionally by asset or chain', triggers: ['safest vault', 'best vault'], argKeys: ['asset', 'chain', 'minTvl'] },
+      { name: 'get_market_overview', summary: 'Vault market TVL, counts and risk distribution', triggers: ['defi vault market', 'vault tvl'], argKeys: [] },
+      { name: 'list_markets', summary: 'Lending markets on Aave, Compound, Morpho and Kamino', triggers: ['lending markets', 'morpho market'], argKeys: ['protocol', 'chain'] },
+    ],
+  },
+  'gate-market': {
+    url: 'https://api.gatemcp.ai/mcp',
+    homepage: 'https://github.com/gate/gate-mcp',
+    summary: 'Gate public spot tickers, order books and candles (no account)',
+    tags: ['crypto', 'exchange', 'market'],
+    triggers: ['gate.io', 'gate exchange', 'gate market'],
+    tools: [
+      { name: 'cex_spot_get_spot_tickers', summary: 'Spot ticker for one Gate pair or all pairs', triggers: ['gate ticker', 'gate price'], argKeys: ['currency_pair'] },
+      { name: 'cex_spot_get_spot_order_book', summary: 'Spot order book for a Gate currency pair', triggers: ['gate order book'], argKeys: ['currency_pair', 'limit'] },
+      { name: 'cex_spot_get_spot_candlesticks', summary: 'Spot OHLCV candles for a Gate currency pair', triggers: ['gate candles', 'gate ohlcv'], argKeys: ['currency_pair', 'interval', 'limit'] },
+      { name: 'cex_spot_list_currency_pairs', summary: 'List Gate spot trading pairs', triggers: ['gate pairs', 'gate markets'], argKeys: [] },
+    ],
+  },
+  'gate-info': {
+    url: 'https://api.gatemcp.ai/mcp/info',
+    homepage: 'https://github.com/gate/gate-mcp',
+    summary: 'Gate public coin profiles, market overview and candles (no account)',
+    tags: ['crypto', 'research', 'market'],
+    triggers: ['gate info', 'gate coin', 'coin profile'],
+    tools: [
+      { name: 'info_coin_get_coin_info', summary: 'Look up a coin by ticker, name, contract or Gate symbol', triggers: ['coin profile', 'token profile'], argKeys: ['query', 'chain'] },
+      { name: 'info_coin_search_coins', summary: 'List coins by category, chain or market cap', triggers: ['search coins', 'coins by chain'], argKeys: ['category', 'chain', 'limit'] },
+      { name: 'info_marketsnapshot_get_market_overview', summary: 'Market cap, volume and dominance dashboard', triggers: ['market overview', 'market dominance'], argKeys: [] },
+      { name: 'info_marketdetail_get_kline', summary: 'Read-only Gate candlesticks for a pair or contract', triggers: ['gate kline'], argKeys: ['symbol', 'timeframe', 'market_type'] },
+    ],
+  },
+  'gate-news': {
+    url: 'https://api.gatemcp.ai/mcp/news',
+    homepage: 'https://github.com/gate/gate-mcp',
+    summary: 'Gate public crypto news, events and exchange announcements (no account)',
+    tags: ['crypto', 'news'],
+    triggers: ['gate news', 'crypto news', 'exchange announcement'],
+    tools: [
+      { name: 'news_events_get_latest_events', summary: 'Recent crypto events and why a coin moved', triggers: ['latest crypto events', 'why did bitcoin move'], argKeys: ['coin', 'time_range', 'limit'] },
+      { name: 'news_feed_search_news', summary: 'Search crypto headlines', triggers: ['crypto headlines', 'search crypto news'], argKeys: ['query', 'coin', 'limit'] },
+      { name: 'news_feed_get_exchange_announcements', summary: 'Exchange listings, delistings and maintenance notices', triggers: ['exchange listing', 'delisting notice'], argKeys: ['exchange', 'coin', 'query'] },
+    ],
+  },
+  'gate-docs': {
+    url: 'https://api.gatemcp.ai/mcp/docs',
+    homepage: 'https://github.com/gate/gate-mcp',
+    summary: 'Gate research corpus: coin reports, papers and guides (no account)',
+    tags: ['crypto', 'research', 'docs'],
+    triggers: ['gate research', 'crypto research', 'crypto whitepaper'],
+    tools: [
+      { name: 'docs_research_get_coin_research', summary: 'Research reports for one coin', triggers: ['bitcoin research', 'coin research'], argKeys: ['coin', 'limit'] },
+      { name: 'docs_research_search_papers', summary: 'Search academic papers and whitepapers', triggers: ['crypto paper', 'whitepaper'], argKeys: ['query', 'limit'] },
+      { name: 'docs_research_search_research', summary: 'Search papers, reports and guides', triggers: ['search crypto research'], argKeys: ['query', 'limit'] },
+    ],
+  },
+  dflow: {
+    url: 'https://pond.dflow.net/mcp',
+    homepage: 'https://pond.dflow.net/ai/mcp',
+    summary: 'DFlow documentation search (no key). Does not sign or send transactions.',
+    tags: ['crypto', 'solana', 'docs'],
+    triggers: ['dflow', 'dflow docs'],
+    tools: [
+      { name: 'search_d_flow', summary: 'Search DFlow docs, recipes and API references', triggers: ['dflow docs', 'dflow api'], argKeys: ['query'] },
+      { name: 'query_docs_filesystem_d_flow', summary: 'Read-only query of the DFlow docs filesystem', triggers: ['dflow docs page'], argKeys: ['command'] },
+    ],
+  },
+  neynar: {
+    url: 'https://docs.neynar.com/mcp',
+    homepage: 'https://docs.neynar.com/docs/neynar-farcaster-with-cursor',
+    summary: 'Neynar and Farcaster documentation search (no key). Not the live social API.',
+    tags: ['crypto', 'farcaster', 'docs'],
+    triggers: ['neynar', 'neynar docs', 'farcaster docs'],
+    tools: [
+      { name: 'search_neynar', summary: 'Search Neynar docs and API references', triggers: ['neynar docs', 'farcaster api docs'], argKeys: ['query'] },
+      { name: 'query_docs_filesystem_neynar', summary: 'Read-only query of the Neynar docs filesystem', triggers: ['neynar docs page'], argKeys: ['command'] },
+    ],
+  },
+  privy: {
+    url: 'https://docs.privy.io/mcp',
+    homepage: 'https://docs.privy.io/basics/get-started/using-llms',
+    summary: 'Privy documentation search (no key). Does not hold a wallet.',
+    tags: ['crypto', 'wallet', 'docs'],
+    triggers: ['privy', 'privy docs'],
+    tools: [
+      { name: 'search_privy_docs', summary: 'Search Privy docs for auth and embedded wallets', triggers: ['privy docs', 'privy wallet docs'], argKeys: ['query'] },
+      { name: 'query_docs_filesystem_privy_docs', summary: 'Read-only query of the Privy docs filesystem', triggers: ['privy docs page'], argKeys: ['command'] },
+    ],
+  },
+  zerion: {
+    url: 'https://developers.zerion.io/mcp',
+    homepage: 'https://zerion.io/blog/zerion-for-api-ai-agents-mcp-skills/',
+    summary: 'Zerion API documentation search (no key). Not live wallet balances.',
+    tags: ['crypto', 'wallet', 'docs'],
+    triggers: ['zerion', 'zerion docs', 'zerion api'],
+    tools: [
+      { name: 'search_zerion_api', summary: 'Search Zerion API docs', triggers: ['zerion docs', 'zerion api docs'], argKeys: ['query'] },
+      { name: 'query_docs_filesystem_zerion_api', summary: 'Read-only query of the Zerion docs filesystem', triggers: ['zerion docs page'], argKeys: ['command'] },
+    ],
+  },
+  circle: {
+    url: 'https://api.circle.com/v1/codegen/mcp',
+    homepage: 'https://developers.circle.com/ai/mcp',
+    summary: 'Circle developer documentation search (no key). Does not move USDC.',
+    tags: ['crypto', 'usdc', 'docs'],
+    triggers: ['circle docs', 'circle developer', 'circle usdc'],
+    tools: [
+      { name: 'search_circle_documentation', summary: 'Search official Circle developer docs', triggers: ['circle docs', 'circle usdc docs'], argKeys: ['query'] },
+      { name: 'get_circle_product_summary', summary: 'Summary of one Circle product', triggers: ['circle product'], argKeys: ['product'] },
+    ],
+  },
 };
 
 export function defaultHttpSpecs({ disabled = [] } = {}) {
