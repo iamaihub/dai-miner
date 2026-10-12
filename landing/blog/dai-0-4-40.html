@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DAI 0.4.40 — the homepage stays home, and your miner can check real prices</title>
+  <meta name="description" content="DAI 0.4.40: the website stops bouncing you back to the benchmark page, your miner can look up live prices and market news with no account or API key, SICI joins the menu, and a few small fixes.">
+  <meta property="og:title" content="DAI 0.4.40 — the homepage stays home, and your miner can check real prices">
+  <meta property="og:description" content="A homepage that remembers you, seventeen new no-login market tools for your miner, SICI in the nav, a real Buy DAI price, and a cleaner setup screen.">
+  <meta property="og:type" content="article">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Iceland&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/svg+xml" href="../dai-miner-on-light.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="../favicon-32.png">
+  <link rel="shortcut icon" href="../favicon.ico">
+  <script src="../i18n.js" defer></script>
+  <style>
+    :root { --bg: #f5f6f2; --ink: #171717; --muted: #525252; --accent: #16a34a; --card: #ffffff; --line: #e4e6e0; }
+    body { font-family: 'Iceland', sans-serif; background: var(--bg); color: var(--ink); line-height: 1.4; }
+    h1, h2, h3, .font-display { font-family: 'Iceland', sans-serif; font-weight: 400; }
+    .neon { color: #16a34a; }
+    .muted { color: var(--muted); }
+    html { font-size: 150%; }
+    @media (max-width: 767px) { html { font-size: 110%; } }
+    @media (max-width: 639px) { html { font-size: 100%; } }
+    .footer-text { font-size: 1.25rem !important; }
+
+    .nav-links { display: none; }
+    @media (min-width: 1024px) { .nav-links { display: flex; } }
+    .hamburger { display: flex; flex-direction: column; gap: 5px; cursor: pointer; padding: 4px; }
+    .hamburger span { display: block; width: 22px; height: 2px; background: #171717; border-radius: 2px; transition: 0.25s; }
+    .hamburger.open span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+    .hamburger.open span:nth-child(2) { opacity: 0; }
+    .hamburger.open span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+    @media (min-width: 1024px) { .hamburger { display: none; } }
+    .mobile-drawer {
+      display: none; position: fixed; top: 64px; left: 0; right: 0; z-index: 49;
+      background: #f5f6f2; border-bottom: 1px solid var(--line);
+      flex-direction: column; padding: 16px 24px 24px;
+    }
+    @media (min-width: 640px) { .mobile-drawer { top: 80px; } }
+    .mobile-drawer.open { display: flex; }
+    .mobile-drawer a { padding: 14px 0; font-size: 22px; color: #171717; border-bottom: 1px solid var(--line); text-decoration: none; }
+    .mobile-drawer a:last-child { border-bottom: none; }
+    @media (min-width: 1024px) { .mobile-drawer { display: none !important; } }
+    .dai-lang-select { background: #fff !important; color: #171717 !important; border: 1px solid #d4d6d0 !important; }
+
+    .prose p { font-size: 1.18rem; line-height: 1.55; margin-bottom: 1rem; color: #262626; }
+    .prose p:last-child { margin-bottom: 0; }
+    .prose strong { color: var(--ink); }
+    .prose ul, .prose ol { margin: 0.35rem 0 1.1rem; padding-inline-start: 1.35rem; }
+    .prose li { font-size: 1.18rem; line-height: 1.5; margin-bottom: 0.55rem; color: #262626; }
+    .prose li:last-child { margin-bottom: 0; }
+    .lede { font-size: 1.5rem !important; line-height: 1.4 !important; color: var(--ink) !important; }
+
+    .meta { font-size: 0.92rem; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); }
+    .tag {
+      display: inline-block; border: 1px solid var(--line); border-radius: 999px;
+      padding: 2px 12px; font-size: 0.9rem; color: var(--accent);
+      background: rgba(22,163,74,0.07);
+    }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.86em; }
+
+    .jump { display: flex; align-items: baseline; flex-wrap: wrap; gap: 12px; }
+    .jump .from { font-size: 2rem; color: var(--muted); }
+    .jump .arrow { color: var(--accent); font-size: 1.4rem; }
+    .jump .to { font-size: 3.2rem; }
+
+    .item { border-top: 1px solid var(--line); padding: 2.4rem 0; }
+    .item-head { display: flex; gap: 1.1rem; align-items: baseline; }
+    .rank { font-size: 3rem; line-height: 1; color: var(--accent); min-width: 2.6rem; }
+    .item h2 { font-size: 2.1rem; line-height: 1.05; }
+    .kicker { font-size: 0.85rem; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+    @media (min-width: 768px) { .item-body { padding-inline-start: 3.7rem; } }
+    @media (max-width: 767px) {
+      .item-head { display: block; }
+      .rank { font-size: 2.2rem; margin-bottom: 2px; }
+    }
+
+    .facts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 1.2rem; }
+    .fact {
+      border: 1px solid var(--line); background: var(--card); border-radius: 4px;
+      padding: 5px 12px; font-size: 0.95rem; color: #333;
+    }
+    .fact b { color: var(--accent); font-weight: normal; }
+
+    .pull {
+      border-inline-start: 3px solid var(--accent); padding-inline-start: 1rem;
+      font-size: 1.35rem !important; line-height: 1.35 !important; color: var(--ink) !important;
+      margin: 1.3rem 0 !important;
+    }
+
+    .grid-also {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 8px;
+    }
+    .cell { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 1.2rem 1.15rem; }
+    .cell h3 { font-size: 1.4rem; margin-bottom: 4px; }
+    .cell p { font-size: 1rem; line-height: 1.4; color: var(--muted); }
+
+    .cmd {
+      border: 1px solid var(--line); background: var(--card); border-radius: 4px;
+      padding: 12px 16px; overflow-x: auto; white-space: nowrap;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.92rem; color: #333;
+    }
+    .cmd .p { color: var(--accent); user-select: none; }
+  </style>
+</head>
+<body>
+
+  <nav class="border-b border-black/10 bg-[#f5f6f2]/85 backdrop-blur-xl fixed w-full z-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-8 h-16 sm:h-20 flex items-center justify-between">
+      <a href="../index.html" class="flex items-center gap-2">
+        <img src="../dai-miner-on-light.svg" alt="DAI Logo" width="36" height="36" class="sm:w-[48px] sm:h-[48px]" style="vertical-align: middle;" />
+      </a>
+      <div class="nav-links items-center gap-x-6 xl:gap-x-9 text-[17px] xl:text-[20px]">
+        <a href="../dai.html" class="hover:text-[#16a34a] transition whitespace-nowrap" data-i18n="nav.dai">DAI</a>
+        <a href="/sici/" class="hover:text-[#16a34a] transition whitespace-nowrap" data-i18n="nav.sici">SICI</a>
+        <a href="../framework.html" class="hover:text-[#16a34a] transition whitespace-nowrap" data-i18n="nav.framework">Framework</a>
+        <a href="../wallet/" class="hover:text-[#16a34a] transition whitespace-nowrap" data-i18n="nav.wallet">Wallet</a>
+        <a href="../explorer/" class="hover:text-[#16a34a] transition whitespace-nowrap" data-i18n="nav.explorer">Explorer</a>
+        <a href="./" class="text-[#16a34a] transition whitespace-nowrap" data-i18n="nav.blog">Blog</a>
+        <div data-i18n-switch></div>
+      </div>
+      <button class="hamburger" id="hamburger" aria-label="Open menu"><span></span><span></span><span></span></button>
+    </div>
+  </nav>
+
+  <div class="mobile-drawer" id="mobile-drawer">
+    <a href="../dai.html" data-i18n="nav.dai">DAI</a>
+    <a href="/sici/" data-i18n="nav.sici">SICI</a>
+    <a href="../framework.html" data-i18n="nav.framework">Framework</a>
+    <a href="../wallet/" data-i18n="nav.wallet">Wallet</a>
+    <a href="../explorer/" data-i18n="nav.explorer">Explorer</a>
+    <a href="./" data-i18n="nav.blog">Blog</a>
+    <div data-i18n-switch style="padding:14px 0"></div>
+  </div>
+
+  <main class="pt-16 sm:pt-20">
+    <article class="max-w-3xl mx-auto px-4 sm:px-8">
+      <header class="pt-10 sm:pt-16 pb-6">
+        <a href="./" class="meta hover:text-[#16a34a]" data-i18n="blog.back">← Blog</a>
+        <div class="flex flex-wrap items-center gap-3 mt-6 mb-5">
+          <span class="tag" data-i18n="blog.tag.release">Release</span>
+          <span class="meta" data-i18n="blog.p5.date">12 October 2026 · v0.4.40</span>
+        </div>
+        <h1 class="text-[42px] sm:text-[64px] leading-[0.98]" data-i18n-html="blog.p5.title">
+          The homepage finally stays <span class="neon">home</span>.
+        </h1>
+        <div class="prose mt-6">
+          <p class="lede" data-i18n="blog.v40.lede">
+            A smaller release than most, but one you will notice right away: the website stops bouncing you
+            around, your miner can go check real prices on its own, and a couple of rough edges got sanded down.
+          </p>
+        </div>
+
+        <div class="jump mt-9 pt-6 border-t border-black/10">
+          <span class="from">0.4.39</span>
+          <span class="arrow">→</span>
+          <span class="to">0.4.40</span>
+          <span class="meta ml-auto" style="text-transform:none;letter-spacing:0.5px" data-i18n="blog.v40.span">
+            Smaller release, bigger toolbox
+          </span>
+        </div>
+      </header>
+
+      <section class="item">
+        <div class="item-head">
+          <div class="rank">01</div>
+          <div>
+            <div class="kicker" data-i18n="blog.v40.s1.k">New skill</div>
+            <h2 data-i18n="blog.v40.s1.h">Your miner can check real prices now — no account needed</h2>
+          </div>
+        </div>
+        <div class="item-body prose mt-5">
+          <p data-i18n="blog.v40.s1.p1">Ask your miner's assistant something like "what's this token worth" or "what's going on with this network today," and it used to be limited to what it already knew. Now it can actually go look.</p>
+          <p data-i18n-html="blog.v40.s1.p2">Seventeen new ways to answer a question shipped in 0.4.40 — live prices and market data from <strong>CoinGecko, CoinPaprika, DexPaprika and Crypto.com</strong>, network information from <strong>Avalanche and LayerZero</strong>, cross-chain routing from <strong>LI.FI</strong>, plus ten more covering everyday questions about wallets, vaults, news and docs. There's also a small library of plain-language notes on how lending protocols like Euler actually work, in case you'd rather read than ask.</p>
+          <p class="pull" data-i18n="blog.v40.s1.pull">Every single one of them works with no sign-up, no account and no API key. You don't configure anything — it's just there.</p>
+        </div>
+      </section>
+
+      <section class="item">
+        <div class="item-head">
+          <div class="rank">02</div>
+          <div>
+            <div class="kicker" data-i18n="blog.v40.s2.k">Website</div>
+            <h2 data-i18n="blog.v40.s2.h">Click "Start Earning" once, and the homepage remembers</h2>
+          </div>
+        </div>
+        <div class="item-body prose mt-5">
+          <p data-i18n="blog.v40.s2.p1">Up until now, every single visit to iamai.kg sent you straight to a GPU benchmark page, even if you'd already been there a dozen times and just wanted the real homepage.</p>
+          <p data-i18n="blog.v40.s2.p2">That's fixed. The first time you click "Start Earning," your browser remembers, and from then on the homepage simply stays put. Clear your browser's site data and it resets — otherwise, it's done bouncing you around.</p>
+        </div>
+      </section>
+
+      <section class="item">
+        <div class="item-head">
+          <div class="rank">03</div>
+          <div>
+            <div class="kicker" data-i18n="blog.v40.s3.k">Buy DAI</div>
+            <h2 data-i18n="blog.v40.s3.h">SICI joins the menu, and the price you see is a real one</h2>
+          </div>
+        </div>
+        <div class="item-body prose mt-5">
+          <p data-i18n="blog.v40.s3.p1"><strong>SICI</strong> now has its own spot in the top menu, next to DAI, Framework, Wallet and Explorer.</p>
+          <p data-i18n="blog.v40.s3.p2">And the price shown on the Buy DAI page is no longer a placeholder — it's read live from the trading pool itself (currently on the test network while things get wired up) and links straight through to Uniswap when you're ready to buy.</p>
+        </div>
+      </section>
+
+      <section class="pt-10 pb-4">
+        <h2 class="text-[2.1rem] leading-tight" data-i18n="blog.v40.also.h">Also in this release</h2>
+        <p class="muted text-[1.1rem] mt-1 mb-6" data-i18n="blog.v40.also.sub">Small, but you'll notice them within a day of running it.</p>
+        <div class="grid-also">
+          <div class="cell">
+            <h3 data-i18n="blog.v40.a1.h">One less field during setup</h3>
+            <p data-i18n="blog.v40.a1.p">The desktop app used to ask for a separate Solana address during onboarding that nothing ever actually used. It's gone — setup is a step shorter, and nothing about your mining wallet changes.</p>
+          </div>
+          <div class="cell">
+            <h3 data-i18n="blog.v40.a2.h">Typing an amount feels right</h3>
+            <p data-i18n="blog.v40.a2.p">On the Send screen, the number you type now shows up directly in the big display instead of in a separate box underneath it. One field, doing what it looks like it does.</p>
+          </div>
+          <div class="cell">
+            <h3 data-i18n="blog.v40.a3.h">One official home for everything</h3>
+            <p data-i18n-html="blog.v40.a3.p">The install script, the docs links and the update checks all point to the same place now — <a href="https://github.com/iamaihub/dai-miner" class="neon hover:underline">github.com/iamaihub/dai-miner</a>.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="py-10 sm:py-14 border-t border-black/10">
+        <h2 class="text-[2.4rem] sm:text-[3rem] leading-[1.02]" data-i18n="blog.cta.h">Put an idle computer to work</h2>
+        <p class="muted text-[1.2rem] mt-3 max-w-xl" data-i18n="blog.cta.p">A Mac mini, an old gaming PC, a server with spare hours. Download it, pick a model, and it starts earning while you get on with your day.</p>
+        <div class="flex flex-wrap gap-3 mt-7 items-center">
+          <a href="../miner.html#start" class="px-6 py-3 rounded-[4px] bg-[#16a34a] text-white text-[1.25rem] hover:bg-black transition" data-i18n="blog.cta.b1">Download DAI Miner →</a>
+          <a href="../docs/" class="px-6 py-3 rounded-[4px] border border-[#16a34a] text-[#16a34a] text-[1.25rem] hover:bg-[#16a34a] hover:text-white transition" data-i18n="blog.cta.b2">Read the docs</a>
+        </div>
+        <div class="cmd mt-6"><span class="p">$</span> curl -fsSL https://miner.iamai.kg/scripts/easy-start.sh | bash</div>
+      </section>
+    </article>
+  </main>
+
+  <footer class="border-t border-black/10 py-8 footer-text muted">
+    <div class="max-w-7xl mx-auto px-4 sm:px-8 flex flex-col sm:flex-row gap-2 sm:justify-between">
+      <div data-i18n="idx.foot.tag">DAI — Decentralized AI compute, powered by local LLMs</div>
+      <div class="flex gap-x-4 gap-y-2 flex-wrap">
+        <a href="../miner.html" class="hover:text-[#171717]" data-i18n="idx.foot.miner">DAI Miner</a>
+        <a href="../wallet/" class="hover:text-[#171717]" data-i18n="nav.wallet">Wallet</a>
+        <a href="../docs/" class="hover:text-[#171717]" data-i18n="idx.foot.docs">Docs</a>
+        <a href="../explorer/" class="hover:text-[#171717]" data-i18n="nav.explorer">Explorer</a>
+        <a href="./" class="hover:text-[#171717]" data-i18n="nav.blog">Blog</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    const hamburger = document.getElementById('hamburger');
+    const drawer = document.getElementById('mobile-drawer');
+    if (hamburger && drawer) {
+      hamburger.addEventListener('click', () => { hamburger.classList.toggle('open'); drawer.classList.toggle('open'); });
+      drawer.querySelectorAll('a').forEach(a => a.addEventListener('click', () => { hamburger.classList.remove('open'); drawer.classList.remove('open'); }));
+    }
+  </script>
+</body>
+</html>
