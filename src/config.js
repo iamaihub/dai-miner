@@ -278,7 +278,6 @@ export function getDefaultConfig() {
 
     // Populated by the GUI onboarding flow
     daiWallet: "",
-    solanaAddress: "",
     onboarded: false,
   };
 }

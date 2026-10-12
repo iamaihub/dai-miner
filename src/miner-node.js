@@ -505,7 +505,6 @@ export class DAIMinerNode {
     this._loadQualityState();
 
     // Resolve mining wallet — must be a DAI-native wallet (dai... address with a local private key).
-    // solanaAddress in config is for future bridge/withdrawal only, never used as rewards recipient.
     const isNativeDAI = addr => addr && addr.startsWith('dai');
 
     // Persist the resolved mining wallet into the config file that was actually

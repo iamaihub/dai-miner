@@ -100,7 +100,6 @@
     "plannerTimeoutMs": 20000
   },
   "daiWallet": "",
-  "solanaAddress": "",
   "onboarded": false,
   "_comment_skills": "Public skill deploy fee: 100 DAI (escrowed for code_audit). Graduation staking threshold: 1,000 DAI total.",
   "meilisearch": {

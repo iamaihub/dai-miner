@@ -270,13 +270,10 @@ function sendStatusUpdate() {
       daiBalance = minerNode.walletManager.getBalance(daiWallet);
     }
 
-    const solanaAddress = minerNode.config?.solanaAddress || null;
-
     const status = {
       wallet: daiWallet,
       daiWallet: daiWallet,
       daiBalance: daiBalance,
-      solanaAddress: solanaAddress,
       balance: daiBalance,
       chainHeight: minerNode.chain ? minerNode.chain.length - 1 : 0,
       reputation: minerNode.reputation || 1.0,
@@ -871,7 +868,6 @@ ipcMain.handle('onboarding:get-status', async () => {
     onboarded: isFullyOnboarded,
     hasDAIWallet,
     daiWallet: daiWallet || null,
-    solanaAddress: config.solanaAddress || null,
   };
 });
 
@@ -945,13 +941,12 @@ ipcMain.handle('onboarding:generate-wallet-backup-key', async () => {
 });
 
 ipcMain.handle('onboarding:complete', async (_event, data) => {
-  const { daiWallet, solanaAddress, ...rest } = data || {};
+  const { daiWallet, ...rest } = data || {};
 
   const updated = saveConfig({
     daiWallet: daiWallet || null,
-    solanaAddress: solanaAddress || null,
     onboarded: true,
-    wallet: daiWallet || null, // solanaAddress is never the mining wallet
+    wallet: daiWallet || null,
     ...rest,
   });
 
@@ -966,7 +961,8 @@ ipcMain.handle('onboarding:reset', async () => {
     const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
     delete config.onboarded;
     delete config.daiWallet;
-    // Keep solanaAddress and rpc settings by default, but remove onboarded flag
+    delete config.solanaAddress;
+    // Keep rpc settings by default, but remove onboarded flag
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
   }
   return { success: true, message: 'Onboarding reset. Restart the app.' };

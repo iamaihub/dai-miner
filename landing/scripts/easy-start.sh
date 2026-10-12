@@ -92,7 +92,6 @@ if [ ! -f "$CONFIG_FILE" ]; then
   },
   "etherscanApiKey": "",
   "daiWallet": "",
-  "solanaAddress": "",
   "onboarded": false
 }
 EOF

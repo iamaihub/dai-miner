@@ -67,10 +67,6 @@ function updateStatus(status) {
     set('valid-submissions', total);
     if (validSubEl) validSubEl.textContent = total;
   }
-  if (status.solanaAddress) {
-    const short = status.solanaAddress.length > 14 ? status.solanaAddress.slice(0, 6) + '…' + status.solanaAddress.slice(-4) : status.solanaAddress;
-    set('solana-address', short);
-  }
   if (status.model || status.inferenceMode) {
     const mode  = (status.inferenceMode || 'AUTO').toUpperCase();
     const model = status.model || 'qwen3-1.7b';
@@ -418,7 +414,7 @@ async function checkAndStartOnboarding() {
     if (status.onboarded || status.hasDAIWallet) {
       // User already has a DAI wallet on disk or in config, or onboarding was completed.
       // Go straight to main app.
-      // (Solana address and RPC can still be configured later in Settings)
+      // (RPC can still be configured later in Settings)
       if (mainAppDiv) mainAppDiv.classList.remove('hidden');
       if (onboardingDiv) onboardingDiv.classList.add('hidden');
 
@@ -701,22 +697,6 @@ window.checkWalletKeyConfirmation = function() {
   }
 };
 
-window.saveSolanaAndContinue = function() {
-  const input = document.getElementById('solana-address-input').value.trim();
-  if (!input) {
-    alert('Please enter your Solana address');
-    return;
-  }
-  currentOnboardingData.solanaAddress = input;
-  goToStep('etherscan');
-};
-
-window.saveSolanaAndFinish = function() {
-  const input = document.getElementById('solana-address-input').value.trim();
-  currentOnboardingData.solanaAddress = input || '';
-  completeOnboarding();
-};
-
 // Close API-key setup steps (kept for any legacy references)
 window.closeApiKeySetup = function() { closeRpcConfig(); };
 
@@ -756,7 +736,6 @@ window.closeRpcConfig = closeRpcConfig;
 window.completeOnboarding = async function() {
   const payload = {
     daiWallet: currentOnboardingData.daiWallet,
-    solanaAddress: currentOnboardingData.solanaAddress,
     walletBackupKeyConfirmed: !!currentOnboardingData.walletBackupKey,
   };
 
@@ -1117,9 +1096,7 @@ async function loadSettingsPanel() {
     status = await window.daiMinerAPI?.getStatus?.();
     if (status) {
       const addrEl  = document.getElementById('settings-dai-address');
-      const solInput = document.getElementById('settings-solana');
       if (addrEl)  addrEl.textContent = status.daiWallet || status.wallet || '—';
-      if (solInput) solInput.value = status.solanaAddress || '';
     }
   } catch (e) {}
 
@@ -1228,8 +1205,7 @@ window.hideSettings = function() {
 };
 
 window.saveSettings = async function() {
-  const solInput = document.getElementById('settings-solana');
-  if (!solInput || !window.daiMinerAPI?.onboarding) return;
+  if (!window.daiMinerAPI?.onboarding) return;
 
   const miningModelSel = document.getElementById('settings-mining-model');
   const model = miningModelSel?.value?.trim() || undefined;
@@ -1237,7 +1213,6 @@ window.saveSettings = async function() {
 
   try {
     await window.daiMinerAPI.onboarding.complete({
-      solanaAddress: solInput.value.trim(),
       ...(model ? { model } : {}),
     });
     if (statusEl) { statusEl.textContent = 'Saved ✓'; statusEl.style.color = '#22c55e'; }
