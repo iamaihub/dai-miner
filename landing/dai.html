@@ -11,6 +11,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
   <link rel="shortcut icon" href="favicon.ico">
   <script src="i18n.js" defer></script>
+  <script src="buy-dai.js" defer></script>
   <style>
     :root { --bg: #f5f6f2; --ink: #171717; --muted: #525252; --accent: #16a34a; --card: #ffffff; --line: #e4e6e0; }
 
@@ -98,12 +99,11 @@
       </a>
       <div class="nav-links items-center gap-x-6 xl:gap-x-9 text-[17px] xl:text-[20px]">
         <a href="dai.html" class="text-[#16a34a] transition whitespace-nowrap" data-i18n="nav.dai">DAI</a>
+        <a href="/sici/" class="hover:text-[#16a34a] transition whitespace-nowrap" data-i18n="nav.sici">SICI</a>
         <a href="framework.html" class="hover:text-[#16a34a] transition whitespace-nowrap" data-i18n="nav.framework">Framework</a>
         <a href="wallet/" class="hover:text-[#16a34a] transition whitespace-nowrap" data-i18n="nav.wallet">Wallet</a>
         <a href="explorer/" class="hover:text-[#16a34a] transition whitespace-nowrap" data-i18n="nav.explorer">Explorer</a>
         <a href="blog/" class="hover:text-[#16a34a] transition whitespace-nowrap" data-i18n="nav.blog">Blog</a>
-        <a href="https://aist.exchange" target="_blank" rel="noopener" class="px-3 lg:px-5 py-2 rounded-[4px] border border-[#16a34a] text-[#16a34a] hover:bg-[#16a34a] hover:text-white transition whitespace-nowrap" data-i18n="nav.p2p">P2P</a>
-        <a href="miner.html#start" class="px-3 lg:px-5 py-2 rounded-[4px] bg-[#16a34a] text-white hover:bg-black transition whitespace-nowrap" data-i18n="nav.runminer">Run a miner</a>
         <div data-i18n-switch></div>
       </div>
       <button class="hamburger" id="hamburger" aria-label="Open menu">
@@ -115,12 +115,11 @@
   <!-- Mobile nav drawer -->
   <div class="mobile-drawer" id="mobile-drawer">
     <a href="dai.html" data-i18n="nav.dai">DAI</a>
+    <a href="/sici/" data-i18n="nav.sici">SICI</a>
     <a href="framework.html" data-i18n="nav.framework">Framework</a>
     <a href="wallet/" data-i18n="nav.wallet">Wallet</a>
     <a href="explorer/" data-i18n="nav.explorer">Explorer</a>
     <a href="blog/" data-i18n="nav.blog">Blog</a>
-    <a href="https://aist.exchange" target="_blank" rel="noopener" data-i18n="nav.p2p">P2P</a>
-    <a href="miner.html#start" data-i18n="nav.runminer">Run a miner</a>
     <div data-i18n-switch style="padding:14px 0"></div>
   </div>
 
@@ -148,14 +147,18 @@
     </div>
   </div>
 
-  <!-- Value band -->
+  <!-- Buy DAI -->
   <div class="section-full border-y border-black/10 py-12 md:py-16 section-alt">
     <div class="max-w-6xl mx-auto px-6">
-      <div class="uppercase tracking-[3px] text-xs text-[#16a34a] mb-10 text-center reveal" data-i18n="idx.val.eyebrow">WHAT ONE DAI IS WORTH</div>
+      <div class="uppercase tracking-[3px] text-xs text-[#16a34a] mb-10 text-center reveal" data-i18n="idx.buy.eyebrow">BUY DAI · TESTNET</div>
       <div class="max-w-3xl mx-auto">
-        <div class="glass card-hover p-8 md:p-10 rounded-[6px] reveal flex flex-col justify-center text-center">
-          <div class="font-display text-[44px] sm:text-[62px] md:text-[88px] leading-none">1 DAI ≈ <span class="neon">&#?%</span></div>
-          <p class="mt-8 text-[16px] sm:text-[20px] md:text-[23px] text-[#525252]" data-i18n="idx.val.desc">DAI is priced by the open market via P2P. Today, 1,000,000,000 AI compute tokens worth $200–500 at ChatGPT, Gemini or Grok.</p>
+        <div class="glass card-hover p-8 md:p-10 rounded-[6px] reveal flex flex-col items-center justify-center text-center" data-buy-dai>
+          <div class="font-display text-[44px] sm:text-[62px] md:text-[88px] leading-none"><span data-buy-dai-price>…</span></div>
+          <p class="mt-4 text-[16px] sm:text-[20px] md:text-[23px] text-[#525252]" data-buy-dai-sub>Reading the testnet pool…</p>
+          <a href="#" target="_blank" rel="noopener noreferrer" data-buy-dai-cta
+             class="inline-flex items-center justify-center mt-8 px-8 py-3 bg-[#16a34a] text-white text-[18px] sm:text-[24px] rounded-[4px] hover:bg-black transition opacity-50 pointer-events-none">
+            Buy
+          </a>
         </div>
       </div>
     </div>

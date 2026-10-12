@@ -20,6 +20,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
   <link rel="shortcut icon" href="favicon.ico">
   <script src="i18n.js" defer></script>
+  <script src="buy-dai.js" defer></script>
   <style>
     :root { --bg: #f5f6f2; --ink: #171717; --muted: #525252; --accent: #16a34a; --card: #ffffff; --line: #e4e6e0; }
 
@@ -84,12 +85,11 @@
       </a>
       <div class="nav-links items-center gap-x-6 xl:gap-x-9 text-[17px] xl:text-[20px]">
         <a href="dai.html" class="hover:text-[#16a34a] transition whitespace-nowrap" data-i18n="nav.dai">DAI</a>
+        <a href="/sici/" class="hover:text-[#16a34a] transition whitespace-nowrap" data-i18n="nav.sici">SICI</a>
         <a href="framework.html" class="hover:text-[#16a34a] transition whitespace-nowrap" data-i18n="nav.framework">Framework</a>
         <a href="wallet/" class="hover:text-[#16a34a] transition whitespace-nowrap" data-i18n="nav.wallet">Wallet</a>
         <a href="explorer/" class="hover:text-[#16a34a] transition whitespace-nowrap" data-i18n="nav.explorer">Explorer</a>
         <a href="blog/" class="hover:text-[#16a34a] transition whitespace-nowrap" data-i18n="nav.blog">Blog</a>
-        <a href="https://aist.exchange" target="_blank" rel="noopener" class="px-3 lg:px-5 py-2 rounded-[4px] border border-[#16a34a] text-[#16a34a] hover:bg-[#16a34a] hover:text-white transition whitespace-nowrap" data-i18n="nav.p2p">P2P</a>
-        <a href="miner.html#start" class="px-3 lg:px-5 py-2 rounded-[4px] bg-[#16a34a] text-white hover:bg-black transition whitespace-nowrap" data-i18n="nav.runminer">Run a miner</a>
         <div data-i18n-switch></div>
       </div>
       <button class="hamburger" id="hamburger" aria-label="Open menu">
@@ -101,36 +101,22 @@
   <!-- Mobile nav drawer -->
   <div class="mobile-drawer" id="mobile-drawer">
     <a href="dai.html" data-i18n="nav.dai">DAI</a>
+    <a href="/sici/" data-i18n="nav.sici">SICI</a>
     <a href="framework.html" data-i18n="nav.framework">Framework</a>
     <a href="wallet/" data-i18n="nav.wallet">Wallet</a>
     <a href="explorer/" data-i18n="nav.explorer">Explorer</a>
     <a href="blog/" data-i18n="nav.blog">Blog</a>
-    <a href="https://aist.exchange" target="_blank" rel="noopener" data-i18n="nav.p2p">P2P</a>
-    <a href="miner.html#start" data-i18n="nav.runminer">Run a miner</a>
     <div data-i18n-switch style="padding:14px 0"></div>
   </div>
 
   <!-- Hero -->
   <div class="relative min-h-[100dvh] flex items-center justify-center pt-16 sm:pt-20 hero-bg">
     <div class="relative z-10 max-w-5xl px-6 text-center">
-      <div class="uppercase tracking-[3px] text-xs text-[#16a34a] mb-6" data-i18n="b2b.hero.eyebrow">DECENTRALIZED &amp; SOVEREIGN</div>
       <h1 class="font-display text-[48px] sm:text-[76px] md:text-[130px] leading-[0.9]" data-i18n-html="b2b.hero">
         <span class="neon">Decentralized.</span><br>
         Sovereign.
       </h1>
-      <p class="mt-8 max-w-3xl mx-auto text-[18px] sm:text-[22px] md:text-[26px] muted" data-i18n="b2b.hero.sub">
-        You govern the AI you use. Vote on what it does. Influence decisions at the protocol — not through a corporation.
-      </p>
-      <div class="mt-10 flex flex-col sm:flex-row gap-4 justify-center">
-        <a href="miner.html#start"
-           class="inline-flex items-center justify-center px-8 py-3 bg-[#16a34a] text-white text-[18px] sm:text-[24px] md:text-[30px] rounded-[4px] hover:bg-black transition" data-i18n="b2b.hero.cta1">
-          Run a miner →
-        </a>
-        <a href="#how"
-           class="inline-flex items-center justify-center px-8 py-3 border border-black/20 hover:bg-black hover:text-white text-[18px] sm:text-[24px] md:text-[30px] rounded-[4px] transition" data-i18n="b2b.hero.cta2">
-          How it works
-        </a>
-      </div>
+      
     </div>
   </div>
 
@@ -163,6 +149,22 @@
           <h3 class="text-[26px] md:text-[34px] tracking-tight mb-2" data-i18n="b2b.trust.4t">Earn from your contribution</h3>
           <p class="muted text-[15px] md:text-[17px]" data-i18n="b2b.trust.4d">Every completed job pays the nodes that made it happen. Your infrastructure becomes an asset.</p>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Buy DAI -->
+  <div class="section-full border-t border-black/10">
+    <div class="w-full max-w-3xl mx-auto px-4 sm:px-8 py-16 md:py-32 text-center">
+      <div class="uppercase tracking-[3px] text-xs text-[#16a34a] mb-6 reveal" data-i18n="b2b.buy.eyebrow">TESTNET</div>
+      <h2 class="font-display text-[40px] sm:text-[56px] md:text-[76px] leading-none mb-10 reveal" data-i18n="b2b.buy.title">Buy DAI.</h2>
+      <div class="glass card-hover p-8 md:p-10 rounded-[6px] reveal" data-buy-dai>
+        <div class="font-display text-[44px] sm:text-[62px] md:text-[80px] leading-none"><span data-buy-dai-price>…</span></div>
+        <p class="mt-4 text-[15px] sm:text-[18px] text-[#525252]" data-buy-dai-sub>Reading the testnet pool…</p>
+        <a href="#" target="_blank" rel="noopener noreferrer" data-buy-dai-cta
+           class="inline-flex items-center justify-center mt-8 px-8 py-3 bg-[#16a34a] text-white text-[18px] sm:text-[22px] rounded-[4px] hover:bg-black transition opacity-50 pointer-events-none">
+          Buy
+        </a>
       </div>
     </div>
   </div>
