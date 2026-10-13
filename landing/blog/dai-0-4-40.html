@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>DAI 0.4.40 — your miner just learned to check real prices</title>
-  <meta name="description" content="DAI 0.4.40: your miner can look up live prices and market news with no account or API key, SICI joins the menu, the Buy DAI price is now a real one, and a few small fixes.">
+  <meta name="description" content="DAI 0.4.40: your miner can look up live prices and market news with no account or API key, every task is now billed for what it actually used (with refunds), SICI joins the menu, the Buy DAI price is now a real one, and a few small fixes.">
   <meta property="og:title" content="DAI 0.4.40 — your miner just learned to check real prices">
-  <meta property="og:description" content="Seventeen new no-login market tools for your miner, SICI in the nav, a real Buy DAI price, and a cleaner setup screen.">
+  <meta property="og:description" content="Seventeen new no-login market tools for your miner, metered job fees with automatic refunds, SICI in the nav, a real Buy DAI price, and a cleaner setup screen.">
   <meta property="og:type" content="article">
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Iceland&family=Noto+Sans:wght@400;600&family=Noto+Sans+SC:wght@400;600&family=Noto+Sans+HK:wght@400;600&family=Noto+Sans+Arabic:wght@400;600&family=Noto+Sans+Bengali:wght@400;600&family=Noto+Sans+Ethiopic:wght@400;600&family=Noto+Serif+Tibetan:wght@400;600&display=swap" rel="stylesheet">
@@ -197,7 +197,8 @@
         <div class="prose mt-6">
           <p class="lede" data-i18n="blog.v40.lede">
             A smaller release than most, but one you will notice right away: your miner can go check real
-            market prices on its own, SICI joined the menu, and a couple of rough edges got sanded down.
+            market prices on its own, every task it runs for you is now billed for what it actually used
+            instead of a flat rate, SICI joined the menu, and a couple of rough edges got sanded down.
           </p>
         </div>
 
@@ -230,6 +231,21 @@
         <div class="item-head">
           <div class="rank">02</div>
           <div>
+            <div class="kicker" data-i18n="blog.v40.s2.k">Public mode</div>
+            <h2 data-i18n="blog.v40.s2.h">Every task is now a real, shared job — and billed for what it actually used</h2>
+          </div>
+        </div>
+        <div class="item-body prose mt-5">
+          <p data-i18n="blog.v40.s2.p1">Ask your miner to do something more involved in Public mode — chain a few tools together, run a lookup, carry out a multi-step task — and that work used to happen quietly on your own machine. There was no record of it on the network, and no payment either way.</p>
+          <p data-i18n="blog.v40.s2.p2">Now every one of those tasks becomes a real job, shared with the network the same way a paid request always was. Billing changed to match: instead of always charging your full budget, you're now charged for what the work actually cost in AI tokens, and the rest is refunded automatically. A quick lookup costs little; a longer, multi-tool task costs more — and spend never runs past the budget you set, either.</p>
+          <p class="pull" data-i18n="blog.v40.s2.pull">You set the ceiling. The job tells you the real price once it's done — and refunds the gap.</p>
+        </div>
+      </section>
+
+      <section class="item">
+        <div class="item-head">
+          <div class="rank">03</div>
+          <div>
             <div class="kicker" data-i18n="blog.v40.s3.k">Buy DAI</div>
             <h2 data-i18n="blog.v40.s3.h">SICI joins the menu, and the price you see is a real one</h2>
           </div>
@@ -255,6 +271,14 @@
           <div class="cell">
             <h3 data-i18n="blog.v40.a3.h">One official home for everything</h3>
             <p data-i18n-html="blog.v40.a3.p">The install script, the docs links and the update checks all point to the same place now — <a href="https://github.com/iamaihub/dai-miner" class="neon hover:underline">github.com/iamaihub/dai-miner</a>.</p>
+          </div>
+          <div class="cell">
+            <h3 data-i18n="blog.v40.a4.h">Every reply can get a star rating</h3>
+            <p data-i18n="blog.v40.a4.p">Rating an AI reply with stars didn't always show up. Now it's there on every reply, in both the desktop app and the wallet — and it's not just for show: your ratings directly shape how future answers are weighted.</p>
+          </div>
+          <div class="cell">
+            <h3 data-i18n="blog.v40.a5.h">Clearer status while a task runs</h3>
+            <p data-i18n="blog.v40.a5.p">Multi-step tasks now show what's actually happening instead of a blank wait, and suggested follow-up questions are capped to the three best instead of a long, unsorted list.</p>
           </div>
         </div>
       </section>
