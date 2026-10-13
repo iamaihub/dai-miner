@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>DAI Miner API Docs</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Iceland&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Iceland&family=Noto+Sans:wght@400;600&family=Noto+Sans+SC:wght@400;600&family=Noto+Sans+HK:wght@400;600&family=Noto+Sans+Arabic:wght@400;600&family=Noto+Sans+Bengali:wght@400;600&family=Noto+Sans+Ethiopic:wght@400;600&family=Noto+Serif+Tibetan:wght@400;600&display=swap" rel="stylesheet">
   <link rel="icon" type="image/svg+xml" href="../dai-miner-on-light.svg">
   <link rel="icon" type="image/png" sizes="32x32" href="../favicon-32.png">
   <link rel="shortcut icon" href="../favicon.ico">
@@ -19,6 +19,35 @@
       line-height: 1.5;
     }
     h1, h2, h3 { font-family: 'Iceland', sans-serif; font-weight: 400; }
+    /* Iceland has no non-Latin glyphs; give each script group its own Noto
+       fallback (loaded above) instead of the browser's generic sans-serif. */
+    html:lang(ru), html:lang(ky) { font-family: 'Iceland', 'Noto Sans', sans-serif; }
+    html:lang(zh) { font-family: 'Iceland', 'Noto Sans SC', 'Noto Sans HK', sans-serif; }
+    html:lang(ar), html:lang(fa), html:lang(ur) { font-family: 'Iceland', 'Noto Sans Arabic', sans-serif; }
+    html:lang(bn) { font-family: 'Iceland', 'Noto Sans Bengali', sans-serif; }
+    html:lang(am) { font-family: 'Iceland', 'Noto Sans Ethiopic', sans-serif; }
+    html:lang(dz) { font-family: 'Iceland', 'Noto Serif Tibetan', sans-serif; }
+    html:lang(ru) h1, html:lang(ru) h2, html:lang(ru) h3,
+    html:lang(ky) h1, html:lang(ky) h2, html:lang(ky) h3 {
+      font-family: 'Iceland', 'Noto Sans', sans-serif; font-weight: 600;
+    }
+    html:lang(zh) h1, html:lang(zh) h2, html:lang(zh) h3 {
+      font-family: 'Iceland', 'Noto Sans SC', 'Noto Sans HK', sans-serif; font-weight: 600;
+    }
+    html:lang(ar) h1, html:lang(ar) h2, html:lang(ar) h3,
+    html:lang(fa) h1, html:lang(fa) h2, html:lang(fa) h3,
+    html:lang(ur) h1, html:lang(ur) h2, html:lang(ur) h3 {
+      font-family: 'Iceland', 'Noto Sans Arabic', sans-serif; font-weight: 600;
+    }
+    html:lang(bn) h1, html:lang(bn) h2, html:lang(bn) h3 {
+      font-family: 'Iceland', 'Noto Sans Bengali', sans-serif; font-weight: 600;
+    }
+    html:lang(am) h1, html:lang(am) h2, html:lang(am) h3 {
+      font-family: 'Iceland', 'Noto Sans Ethiopic', sans-serif; font-weight: 600;
+    }
+    html:lang(dz) h1, html:lang(dz) h2, html:lang(dz) h3 {
+      font-family: 'Iceland', 'Noto Serif Tibetan', sans-serif; font-weight: 600;
+    }
     .neon { color: #16a34a; }
     .glass { background: rgba(255,255,255,0.86); border: 1px solid var(--line); }
     .code-block {
