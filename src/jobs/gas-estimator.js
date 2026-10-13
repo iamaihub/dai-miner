@@ -132,6 +132,37 @@ export function settleFee(actualTokens, gasPrice, maxBudget) {
   return { fee, refund: Math.max(0, maxBudget - fee), cost, underfunded: cost > maxBudget };
 }
 
+// Phase 2 cascade fan-out payout split — dormant unless the coordinator calls
+// this at all (gated behind CASCADE_FANOUT_FORK_HEIGHT in miner-node.js; see
+// that constant's comment for why this needs a real activation gate rather
+// than just being an always-on additive field).
+//
+// Splits a job's already-metered `fee` across every peer that computed part
+// of the cascade, proportional to the tokens each one actually used, and
+// keeps the rest for the coordinator (whose own wallet is expected to be one
+// of the `contributions` entries if it ran any task locally). Rounds down
+// per contributor — any remainder from rounding simply stays with the
+// coordinator rather than being lost or double-paid.
+//
+// `contributions`: [{ address, tokensUsed }, ...] — one entry per distinct
+// contributor, already merged/deduped by the caller.
+// Returns { minerFee, payouts } where `payouts` is [{ address, amount }, ...]
+// for every contributor OTHER than `coordinatorAddress` with a nonzero share
+// (empty array if there's nothing to split, e.g. the coordinator did it all).
+export function splitContributions(fee, contributions, coordinatorAddress) {
+  const list = Array.isArray(contributions) ? contributions : [];
+  const total = list.reduce((s, c) => s + (c?.tokensUsed || 0), 0);
+  if (!(fee > 0) || !(total > 0) || list.length < 2) return { minerFee: fee, payouts: [] };
+
+  const payouts = list
+    .filter(c => c?.address && c.address !== coordinatorAddress && c.tokensUsed > 0)
+    .map(c => ({ address: c.address, amount: Math.floor(fee * c.tokensUsed / total) }))
+    .filter(c => c.amount > 0);
+
+  const minerFee = fee - payouts.reduce((s, c) => s + c.amount, 0);
+  return { minerFee, payouts };
+}
+
 export function timeoutFee(maxBudget, pct = GAS.TIMEOUT_RESERVE_PCT) {
   const reservation = maxBudget * pct;
   return { reservation, refund: maxBudget - reservation };

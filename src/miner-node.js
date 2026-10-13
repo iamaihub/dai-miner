@@ -71,7 +71,7 @@ import { SKILL_CONTEXT_MAX, SKILL_JOB_CONTEXT_MAX } from './skills/limits.js';
 import { feeForLive } from './jobs/gas-price.js';
 import { displayRates } from './rates/display-rates.js';
 import { loadAllSkills, writeSkillFile } from './skills/loader.js';
-import { estimateTokens, estimateChatTokens, outputTokenCap, settleFee, timeoutFee, gasPriceFor, GAS } from './jobs/gas-estimator.js';
+import { estimateTokens, estimateChatTokens, outputTokenCap, settleFee, timeoutFee, gasPriceFor, splitContributions, GAS } from './jobs/gas-estimator.js';
 import { ASSETS, STABLE_TICKERS, normalizeCurrency, isKnownAsset, decimalsOf, listAssets, fromRaw as assetFromRaw, formatAmount as assetFormatAmount } from './assets.js';
 import { feedbackStore } from './jobs/feedback-store.js';
 
@@ -92,7 +92,7 @@ import { McpManager, isMcpArgumentError } from './ai/mcp-client.js';
 import { pickToolsForMessage } from './ai/mcp-router.js';
 import { assignMcpToPeers, callPeerMcp } from './ai/mcp-disperse.js';
 import { searchCards } from './ai/mcp-catalog.js';
-import { executeTaskCascade } from './ai/task-cascade.js';
+import { executeTaskCascade, runOneTask } from './ai/task-cascade.js';
 import { planCatalogCascade } from './ai/mcp-planner.js';
 import {
   materializeAttachments, applyAttachmentsToMessages, MAX_ATTACHMENT_BYTES,
@@ -343,6 +343,28 @@ const DEFAULT_ENABLED_SKILLS = new Set([
 // Job types that require a paid, signature-verified fee before the node will
 // run them at all (as opposed to 'verdict' jobs, where a fee is optional).
 const FEE_REQUIRED_JOB_TYPES = new Set(['skill', 'compute']);
+
+// A single fanned-out cascade task (one skill/MCP/LLM-generate step of someone
+// else's cascade), gossiped free — the requester already escrowed the whole
+// cascade's fee on the parent 'compute' job; this node gets paid its share via
+// that parent job's job-settled `contributions` once the cascade finishes, not
+// via its own escrow. Deliberately NOT in FEE_REQUIRED_JOB_TYPES.
+const CASCADE_TASK_JOB_TYPE = 'cascade-task';
+
+// Multi-peer cascade fan-out (dormant until a coordinated release raises this
+// past the chain's current height — see Phase 2 of
+// ~/.claude/plans/sunny-waddling-wilkinson.md). job-settled transitions are
+// applied purely locally per node (not part of the chainWork-validated ledger
+// replay — see tx-ledger.js), so a node that doesn't understand `contributions`
+// on that transition would silently under-credit instead of rejecting the
+// block: there is no existing activation-height primitive in this codebase to
+// gate that safely (the only prior coordinated-activation mechanism is the
+// genesis-hash pin used for the 0.4.25/0.4.36 hard forks, which is a much
+// heavier all-or-nothing chain-identity break). This introduces a lighter one.
+// Infinity = never active. A future release sets a real height once every
+// node on the network is confirmed upgraded; until then this is unreachable
+// code and the cascade behaves exactly as it did before Phase 2 existed.
+const CASCADE_FANOUT_FORK_HEIGHT = Infinity;
 
 // Canonical hash committing a fee payment to one specific job + miner + amount + nonce,
 // so a signature over it can't be replayed against a different job or a higher budget.
@@ -1339,6 +1361,63 @@ export class DAIMinerNode {
     }
   }
 
+  // Phase 2 activation check — see CASCADE_FANOUT_FORK_HEIGHT's comment.
+  // Infinity by default, so this is always false until a future coordinated
+  // release sets a real height.
+  _cascadeFanOutActive() {
+    return (this.chain?.length || 0) >= CASCADE_FANOUT_FORK_HEIGHT;
+  }
+
+  /**
+   * Phase 2 fan-out: submit ONE cascade task (a skill or MCP call — never the
+   * LLM synthesis itself, which stays with the coordinator) as its own
+   * gossiped 'cascade-task' job, no separate escrow (paid later via the
+   * parent job's job-settled `contributions`), and wait a bounded time for a
+   * peer to claim+compute it. Returns { output, tokensUsed, address } or null
+   * to fall back to local execution — a slow/absent peer market must never
+   * block an answer. Callers must check _cascadeFanOutActive() first; this
+   * has no effect of its own otherwise reachable in today's default config.
+   */
+  async _dispatchCascadeTask(cascadeTask, model) {
+    try {
+      const peers = await this._getComputePeers().catch(() => []);
+      if (!peers.length) return null;
+
+      const subJobId = `cascade-task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      // scoreJobForMiner() scores any job with no `fee` at exactly 0, which
+      // onNewJob treats as "ignore" — every receiving peer would silently drop
+      // this job and never compute it without an explicit nonzero fee here.
+      // Matches the same fallback the /job HTTP handler uses for a job with no
+      // maxBudget. (Could scale with the parent job's own budget for priority
+      // parity with regular jobs — flat for now, simplicity over optimality.)
+      const subJob = { id: subJobId, type: CASCADE_TASK_JOB_TYPE, model: model || this.config.model, fee: 10_000_000, payload: { cascadeTask } };
+      if (!this.jobResults) this.jobResults = new Map();
+      this.jobResults.set(subJobId, {
+        id: subJobId, status: 'queued', job: subJob, result: null, error: null,
+        createdAt: Date.now(), updatedAt: Date.now(),
+      });
+      await this.gossip.publish('new-job', subJob).catch(() => {});
+
+      const DISPATCH_TIMEOUT_MS = 12_000;
+      const deadline = Date.now() + DISPATCH_TIMEOUT_MS;
+      while (Date.now() < deadline) {
+        await new Promise(r => setTimeout(r, 500));
+        const rec = this.jobResults.get(subJobId);
+        if (rec?.status === 'done' && rec.result) {
+          return {
+            output: rec.result.output ?? null,
+            tokensUsed: rec.result.tokensUsed || 0,
+            address: rec.resultMiner || null,
+          };
+        }
+        if (rec?.status === 'error') return null;
+      }
+      return null; // no peer answered in time
+    } catch {
+      return null;
+    }
+  }
+
   async _runTaskCascade(plan, { model, message } = {}) {
     const mcpIds = [...new Set((plan.stages || []).flat().filter(t => t.kind === 'mcp').map(t => t.server).filter(Boolean))];
     let assignment = null;
@@ -1359,31 +1438,65 @@ export class DAIMinerNode {
     // many skills/MCPs/LLM calls it actually ran (see settleFee in gas-estimator.js).
     let cascadeTokens = 0;
     const estTokens = (s) => Math.ceil(String(s ?? '').length / 4);
+    // Per-contributor tally (coordinator's own wallet, or a peer that computed a
+    // fanned-out task) — always tracked, but only used for job-settled
+    // `contributions` once _cascadeFanOutActive(). Harmless/unused otherwise.
+    const contributions = [];
+    const fanOutActive = this._cascadeFanOutActive();
     const runners = {
       model: model || this.config.model,
       getBrainDataDir,
       runSkill: async (skillId, input) => {
+        if (fanOutActive) {
+          const dispatched = await this._dispatchCascadeTask({ kind: 'skill', skillId, input }, model);
+          if (dispatched) {
+            cascadeTokens += dispatched.tokensUsed;
+            contributions.push({ address: dispatched.address, tokensUsed: dispatched.tokensUsed });
+            return dispatched.output;
+          }
+        }
         const { output, tokensUsed } = await skillsManager.runSkill(skillId, input, this.config);
-        cascadeTokens += tokensUsed || estTokens(JSON.stringify(output));
+        const used = tokensUsed || estTokens(JSON.stringify(output));
+        cascadeTokens += used;
+        contributions.push({ address: this.config.wallet, tokensUsed: used });
         return output;
       },
       callMcp: async (toolName, args) => {
         if (!this.mcp?.callTool) throw new Error('MCP not initialized');
         await this._initMcp();
+        if (fanOutActive) {
+          const dispatched = await this._dispatchCascadeTask({ kind: 'mcp', tool: toolName, arguments: args || {} }, model);
+          if (dispatched) {
+            cascadeTokens += dispatched.tokensUsed;
+            contributions.push({ address: dispatched.address, tokensUsed: dispatched.tokensUsed });
+            return dispatched.output;
+          }
+        }
         const out = await this._dispatchMcp(toolName, args || {}, assignment);
-        cascadeTokens += estTokens(out);
+        const used = estTokens(out);
+        cascadeTokens += used;
+        contributions.push({ address: this.config.wallet, tokensUsed: used });
         return out;
       },
+      // The LLM synthesis step (including final aggregation) always stays with
+      // this node — only specialist skill/MCP calls fan out to peers.
       llm: async (messages, opts = {}) => {
         const text = await this._llmChat(messages, { model: opts.model || model, timeoutMs: opts.timeoutMs || 60_000 });
         const promptChars = messages.reduce((n, m) => n + (m.content?.length || 0), 0);
-        cascadeTokens += estTokens(text) + Math.ceil(promptChars / 4);
+        const used = estTokens(text) + Math.ceil(promptChars / 4);
+        cascadeTokens += used;
+        contributions.push({ address: this.config.wallet, tokensUsed: used });
         return text;
       },
     };
     try {
       const result = await executeTaskCascade(plan, runners, message);
-      return { ...result, tokensUsed: cascadeTokens };
+      const merged = new Map();
+      for (const c of contributions) {
+        if (!c.address) continue;
+        merged.set(c.address, (merged.get(c.address) || 0) + (c.tokensUsed || 0));
+      }
+      return { ...result, tokensUsed: cascadeTokens, contributions: [...merged].map(([address, tokensUsed]) => ({ address, tokensUsed })) };
     } finally {
       this._mcpAssignment = null;
     }
@@ -6188,13 +6301,14 @@ export class DAIMinerNode {
     // goes to the winner alone — a superseded run neither overwrites the result nor
     // emits job-settled (see computeAndSubmitJob), and the escrow guard makes a
     // near-simultaneous double-settle a no-op on replay.
-    this.gossip.subscribe('job-result', ({ jobId, result }) => {
+    this.gossip.subscribe('job-result', ({ jobId, result, miner }) => {
       if (!jobId || !result || !result.verdict) return;
       const rec = this.jobResults?.get(jobId);
       if (rec && rec.status === 'done' && rec.result) return;   // already have a winner — ignore
       if (rec) {
         rec.result = result;
         rec.status = 'done';
+        rec.resultMiner = miner || null; // who computed it — needed for fan-out contribution payouts
         rec.updatedAt = Date.now();
       }
       this.jobQueue.completed.add(jobId);
@@ -7942,6 +8056,14 @@ export class DAIMinerNode {
   // prompt/reply. A dishonest worker can currently misreport it. Accepted gap
   // for now: real verification (re-checking token count from the stored
   // prompt/reply) is a separate piece of work this does not build.
+  //
+  // Also does not split Phase 2 fan-out contributions (see
+  // CASCADE_FANOUT_FORK_HEIGHT) — a board-claimed 'compute' job whose cascade
+  // fanned sub-tasks out to other peers still pays the single claiming worker
+  // the whole fee here, unlike the local-compute settlement path below. Known,
+  // bounded gap: harmless while the fork is inactive (Infinity), and even once
+  // active this only under-pays sub-task contributors on the board path, it
+  // never over-pays or double-spends — not fixed by this change.
   async _settleBoardFeeJob({ jobId, worker, requesterAddress, maxBudget, currency, paymentTx, result }) {
     if (this._appliedEscrowJobIds.has(jobId)) return false;
     if (!requesterAddress || !(maxBudget > 0) || !paymentTx?.signature || typeof paymentTx?.nonce !== 'number') {
@@ -8211,8 +8333,8 @@ export class DAIMinerNode {
     // Mixed task cascade (skills + MCP + datasets + media) — full executor
     if (route.type === 'tasks' && route.tasks) {
       try {
-        const { reply, results, tokensUsed } = await this._runTaskCascade(route.tasks, { model, message: prompt });
-        if (reply) return { reply, skillId: 'task-cascade', results, tokensUsed };
+        const { reply, results, tokensUsed, contributions } = await this._runTaskCascade(route.tasks, { model, message: prompt });
+        if (reply) return { reply, skillId: 'task-cascade', results, tokensUsed, contributions };
       } catch (e) {
         console.warn('[compute] task cascade failed:', e.message);
       }
@@ -8221,8 +8343,8 @@ export class DAIMinerNode {
     // Multi-skill cascade
     if (route.type === 'cascade' && route.tasks) {
       try {
-        const { reply, tokensUsed } = await this._runTaskCascade(route.tasks, { model, message: prompt });
-        if (reply) return { reply, skillId: 'cascade', tokensUsed };
+        const { reply, tokensUsed, contributions } = await this._runTaskCascade(route.tasks, { model, message: prompt });
+        if (reply) return { reply, skillId: 'cascade', tokensUsed, contributions };
       } catch { /* fall through */ }
     }
     if (route.type === 'cascade' && route.jobs?.length) {
@@ -8235,8 +8357,8 @@ export class DAIMinerNode {
           }))],
           reason: route.reason,
         };
-        const { reply, tokensUsed } = await this._runTaskCascade(plan, { model, message: prompt });
-        if (reply) return { reply, skillId: 'cascade', tokensUsed };
+        const { reply, tokensUsed, contributions } = await this._runTaskCascade(plan, { model, message: prompt });
+        if (reply) return { reply, skillId: 'cascade', tokensUsed, contributions };
       } catch { /* fall through */ }
     }
     if (route.type === 'sequence') {
@@ -8431,6 +8553,51 @@ export class DAIMinerNode {
   async computeAndSubmitJob(job) {
     const start = Date.now();
 
+    // ── Fanned-out cascade task (Phase 2 — dormant unless a future coordinated
+    // release activates CASCADE_FANOUT_FORK_HEIGHT; see that constant). No
+    // escrow/settlement here — this node gets paid via the parent cascade's
+    // own job-settled `contributions` once the whole cascade finishes.
+    if (job.type === CASCADE_TASK_JOB_TYPE && job.payload?.cascadeTask) {
+      try {
+        let taskTokens = 0;
+        const estTokens = (s) => Math.ceil(String(s ?? '').length / 4);
+        const runners = {
+          model: job.model || this.config.model,
+          getBrainDataDir,
+          runSkill: async (skillId, input) => {
+            const { output, tokensUsed } = await skillsManager.runSkill(skillId, input, this.config);
+            taskTokens += tokensUsed || estTokens(JSON.stringify(output));
+            return output;
+          },
+          callMcp: async (toolName, args) => {
+            if (!this.mcp?.callTool) throw new Error('MCP not initialized');
+            await this._initMcp();
+            const out = await this._dispatchMcp(toolName, args || {}, null);
+            taskTokens += estTokens(out);
+            return out;
+          },
+          llm: async (messages, opts = {}) => {
+            const text = await this._llmChat(messages, { model: opts.model || job.model || this.config.model, timeoutMs: opts.timeoutMs || 60_000 });
+            taskTokens += estTokens(text);
+            return text;
+          },
+        };
+        const prompt = job.payload.prompt || job.payload.cascadeTask.segment || job.payload.cascadeTask.query || '';
+        const output = await runOneTask(job.payload.cascadeTask, runners, prompt, '', {});
+        const result = {
+          type: 'cascade-task', verdict: 'CASCADE_TASK_RESULT', address: 'cascade-task',
+          output, tokensUsed: taskTokens, computationTimeMs: Date.now() - start,
+        };
+        this._updateJob(job.id, { status: 'done', result });
+        if (!this.jobQueue.completed.has(job.id)) this.jobQueue.markCompleted(job.id);
+        this.gossip.publish('job-result', { jobId: job.id, result, miner: this.config.wallet, ts: Date.now() }).catch(() => {});
+      } catch (e) {
+        console.warn(`[DAI-Worker] Cascade task ${job.id} failed:`, e.message);
+        this._updateJob(job.id, { status: 'error', error: e.message });
+      }
+      return;
+    }
+
     // ── Skill job path ────────────────────────────────────────────────────────
     if (job.type === 'skill' && job.skillId) {
       // Gate: skill must be enabled on this node
@@ -8583,13 +8750,16 @@ export class DAIMinerNode {
         const model = this._resolveRequestModel(job.model || this.config.model, { hasImages });
 
         const gasPrice = this.config.gasPrice || GAS.DEFAULT_GAS_PRICE;
-        let reply = null, tokensUsed = null, routedSkillId = null, datasetUsed = null;
+        let reply = null, tokensUsed = null, routedSkillId = null, datasetUsed = null, routedContributions = null;
 
         // Auto-route through task cascade / skills (unless a dataset is pinned or route:false),
         // so "search the web: …" and multi-step cascades work via the jobs API too.
         if (!dataset && job.route !== false && job.payload?.route !== false && !hasImages) {
           const routed = await this._routeComputePrompt(prompt, model);
-          if (routed) { reply = routed.reply; tokensUsed = routed.tokensUsed; routedSkillId = routed.skillId; }
+          if (routed) {
+            reply = routed.reply; tokensUsed = routed.tokensUsed; routedSkillId = routed.skillId;
+            if (routed.contributions?.length) routedContributions = routed.contributions;
+          }
         }
 
         if (reply == null) {
@@ -8699,9 +8869,23 @@ export class DAIMinerNode {
         }
 
         if (job.requesterAddress && job.maxBudget > 0 && this.escrow.has(job.id)) {
-          // No-refund: settleFee returns fee = maxBudget (the whole bid), refund = 0.
-          const { fee, refund }  = settleFee(tokensUsed, gasPrice, job.maxBudget);
-          const settled = { type: 'job-settled', jobId: job.id, requesterAddress: job.requesterAddress, minerAddress: this.config.wallet, actualTokens: tokensUsed, actualFee: fee, refund, gasPrice, ...(job.currency && job.currency !== 'DAI' ? { currency: job.currency } : {}), completedAt: Date.now() };
+          const { fee, refund } = settleFee(tokensUsed, gasPrice, job.maxBudget);
+          // Phase 2 fan-out payout split — only computed once
+          // CASCADE_FANOUT_FORK_HEIGHT actually activates (see that constant);
+          // until then this stays null and the transition is byte-identical to
+          // pre-Phase-2 settlement, regardless of what _runTaskCascade tracked.
+          let contributions = null;
+          let minerFee = fee;
+          if (this._cascadeFanOutActive() && routedContributions?.length) {
+            const split = splitContributions(fee, routedContributions, this.config.wallet);
+            if (split.payouts.length) { contributions = split.payouts; minerFee = split.minerFee; }
+          }
+          const settled = {
+            type: 'job-settled', jobId: job.id, requesterAddress: job.requesterAddress, minerAddress: this.config.wallet,
+            actualTokens: tokensUsed, actualFee: minerFee, refund, gasPrice,
+            ...(contributions ? { contributions } : {}),
+            ...(job.currency && job.currency !== 'DAI' ? { currency: job.currency } : {}), completedAt: Date.now(),
+          };
           this.pendingBrainTransitions.push(settled);
           this._gossipedJobTransitions.add(`${job.id}:job-settled`);
           this.gossip.publish('job-transition', settled).catch(() => {});
@@ -9049,6 +9233,15 @@ export class DAIMinerNode {
       if (transition.actualFee > 0)  this.walletManager.credit(transition.minerAddress, transition.actualFee, cur);
       if (transition.proposerFee > 0 && transition.proposerAddress)
         this.walletManager.credit(transition.proposerAddress, transition.proposerFee, cur);
+      // Phase 2 fan-out payout split — additive, optional field. A node that
+      // predates this (running pre-Phase-2-activation code) simply never emits
+      // or reads it, so it never observes a transition carrying it; see
+      // CASCADE_FANOUT_FORK_HEIGHT's comment for why that matters here.
+      if (Array.isArray(transition.contributions)) {
+        for (const c of transition.contributions) {
+          if (c?.address && c.amount > 0) this.walletManager.credit(c.address, c.amount, cur);
+        }
+      }
       if (transition.refund > 0)     this.walletManager.credit(transition.requesterAddress, transition.refund, cur);
     } else if (transition.type === 'job-timeout') {
       if (transition.reservationFee > 0) this.walletManager.credit(transition.minerAddress, transition.reservationFee, cur);

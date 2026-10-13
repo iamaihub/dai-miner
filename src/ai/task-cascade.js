@@ -623,7 +623,10 @@ export function buildMcpArgs(tool, text) {
   return null;   // nothing text-shaped to fill — not callable blind
 }
 
-async function runOneTask(task, runners, userMessage, priorContext, priorSnippets = {}) {
+// Exported so a job claiming a single fanned-out cascade task (see
+// planToFanOutJobs / miner-node.js's 'cascade-task' job type) can run exactly
+// that one task the same way executeTaskCascade's own per-stage loop does.
+export async function runOneTask(task, runners, userMessage, priorContext, priorSnippets = {}) {
   switch (task.kind) {
     case 'skill': {
       const input = { ...(task.input || {}), message: task.segment || userMessage, query: task.input?.query || task.segment || userMessage };
