@@ -1418,7 +1418,7 @@ export class DAIMinerNode {
     }
   }
 
-  async _runTaskCascade(plan, { model, message } = {}) {
+  async _runTaskCascade(plan, { model, message, maxBudget, gasPrice } = {}) {
     const mcpIds = [...new Set((plan.stages || []).flat().filter(t => t.kind === 'mcp').map(t => t.server).filter(Boolean))];
     let assignment = null;
     // /api/mcp/execute is localhost-only, so a remote peer either refuses the
@@ -1443,10 +1443,26 @@ export class DAIMinerNode {
     // `contributions` once _cascadeFanOutActive(). Harmless/unused otherwise.
     const contributions = [];
     const fanOutActive = this._cascadeFanOutActive();
+    // Budget enforcement: tokens spent across every task (this node's own work
+    // plus any fanned-out peer's) must never exceed what the requester actually
+    // paid for. No maxBudget (the free Private-mode /api/chat path, which never
+    // reaches here with one) means no cap at all. A skill/MCP call can't be cut
+    // mid-call, so once the budget is gone the next one is skipped outright
+    // (task marked failed — executeTaskCascade's aggregator already handles a
+    // failed task gracefully); an LLM call gets truncated mid-generation via
+    // hardTokenCap instead, so a reply can end mid-sentence rather than either
+    // overrunning the budget or being dropped entirely. Checked at the start of
+    // each task, which is a strong but not perfectly atomic guarantee for tasks
+    // that start concurrently within the same parallel stage — the hard backing
+    // guarantee that the REQUESTER is never charged past maxBudget regardless
+    // is settleFee's own Math.min cap (gas-estimator.js), unaffected by this.
+    const budgetTokens = (maxBudget != null && gasPrice > 0) ? Math.floor(maxBudget / gasPrice) : null;
+    const remainingTokens = () => (budgetTokens == null ? Infinity : Math.max(0, budgetTokens - cascadeTokens));
     const runners = {
       model: model || this.config.model,
       getBrainDataDir,
       runSkill: async (skillId, input) => {
+        if (remainingTokens() <= 0) throw new Error('Fee budget exhausted — skipped');
         if (fanOutActive) {
           const dispatched = await this._dispatchCascadeTask({ kind: 'skill', skillId, input }, model);
           if (dispatched) {
@@ -1462,6 +1478,7 @@ export class DAIMinerNode {
         return output;
       },
       callMcp: async (toolName, args) => {
+        if (remainingTokens() <= 0) throw new Error('Fee budget exhausted — skipped');
         if (!this.mcp?.callTool) throw new Error('MCP not initialized');
         await this._initMcp();
         if (fanOutActive) {
@@ -1481,7 +1498,12 @@ export class DAIMinerNode {
       // The LLM synthesis step (including final aggregation) always stays with
       // this node — only specialist skill/MCP calls fan out to peers.
       llm: async (messages, opts = {}) => {
-        const text = await this._llmChat(messages, { model: opts.model || model, timeoutMs: opts.timeoutMs || 60_000 });
+        const cap = remainingTokens();
+        if (cap <= 0) throw new Error('Fee budget exhausted — skipped');
+        const text = await this._llmChat(messages, {
+          model: opts.model || model, timeoutMs: opts.timeoutMs || 60_000,
+          ...(cap === Infinity ? {} : { hardTokenCap: cap }),
+        });
         const promptChars = messages.reduce((n, m) => n + (m.content?.length || 0), 0);
         const used = estTokens(text) + Math.ceil(promptChars / 4);
         cascadeTokens += used;
@@ -7079,7 +7101,13 @@ export class DAIMinerNode {
     return out;
   }
 
-  async _llmChat(messages, { model, timeoutMs = 60_000 } = {}) {
+  // `hardTokenCap`, when given, truncates generation mid-stream once that many
+  // output tokens are hit — same mechanism the raw (non-cascade) paid-compute
+  // path already uses via qvac.chat's own hardTokenCap. Callers with a budget
+  // to respect (see _runTaskCascade) pass the REMAINING budget here so a
+  // cascade can cut a reply mid-sentence rather than spend past what the
+  // requester paid for.
+  async _llmChat(messages, { model, timeoutMs = 60_000, hardTokenCap } = {}) {
     const qvac = await getQvacModels();
     if (!qvac || !qvac.ENABLED) throw new Error('Inference backend (QVAC) is unavailable');
 
@@ -7098,6 +7126,7 @@ export class DAIMinerNode {
     const reply = await qvac.chat(messages, {
       model: model || this.config.model || 'qwen3-1.7b',
       timeLimit: timeoutMs,
+      ...(hardTokenCap != null ? { hardTokenCap } : {}),
     });
     return reply || '';
   }
@@ -8325,7 +8354,11 @@ export class DAIMinerNode {
    * { reply, skillId, skillOutput, tokensUsed } when a skill matched and produced an
    * answer, or null to fall back to the raw LLM. Never throws (routing is best-effort).
    */
-  async _routeComputePrompt(prompt, model) {
+  // budget: { maxBudget, gasPrice } — forwarded into _runTaskCascade so a
+  // paid job's cascade never spends more tokens than the requester escrowed
+  // (see _runTaskCascade's own comment). Omitted by the free, uncapped
+  // Private-mode /api/chat caller.
+  async _routeComputePrompt(prompt, model, budget = {}) {
     let route;
     try { route = await this._routeMessage(prompt); } catch { return null; }
     if (!route) return null;
@@ -8333,7 +8366,7 @@ export class DAIMinerNode {
     // Mixed task cascade (skills + MCP + datasets + media) — full executor
     if (route.type === 'tasks' && route.tasks) {
       try {
-        const { reply, results, tokensUsed, contributions } = await this._runTaskCascade(route.tasks, { model, message: prompt });
+        const { reply, results, tokensUsed, contributions } = await this._runTaskCascade(route.tasks, { model, message: prompt, ...budget });
         if (reply) return { reply, skillId: 'task-cascade', results, tokensUsed, contributions };
       } catch (e) {
         console.warn('[compute] task cascade failed:', e.message);
@@ -8343,7 +8376,7 @@ export class DAIMinerNode {
     // Multi-skill cascade
     if (route.type === 'cascade' && route.tasks) {
       try {
-        const { reply, tokensUsed, contributions } = await this._runTaskCascade(route.tasks, { model, message: prompt });
+        const { reply, tokensUsed, contributions } = await this._runTaskCascade(route.tasks, { model, message: prompt, ...budget });
         if (reply) return { reply, skillId: 'cascade', tokensUsed, contributions };
       } catch { /* fall through */ }
     }
@@ -8357,7 +8390,7 @@ export class DAIMinerNode {
           }))],
           reason: route.reason,
         };
-        const { reply, tokensUsed, contributions } = await this._runTaskCascade(plan, { model, message: prompt });
+        const { reply, tokensUsed, contributions } = await this._runTaskCascade(plan, { model, message: prompt, ...budget });
         if (reply) return { reply, skillId: 'cascade', tokensUsed, contributions };
       } catch { /* fall through */ }
     }
@@ -8438,10 +8471,14 @@ export class DAIMinerNode {
           prompt = applied.messages.find(m => m.role === 'user')?.content || prompt;
         }
         const model = this._resolveRequestModel(job.model || this.config.model, { hasImages });
+        // Computed once, up front, so the same price bounds both cascade
+        // token spend (below) and raw-LLM output length (outputTokenCap,
+        // further down) — this.config.gasPrice alone ignores job.currency.
+        const gasPrice = gasPriceFor(job.currency, this.config);
 
         // Auto-route through task cascade / skills (unless dataset pinned, route:false, or image-only).
         if (!dataset && job.route !== false && job.payload?.route !== false && !hasImages) {
-          const routed = await this._routeComputePrompt(prompt, model);
+          const routed = await this._routeComputePrompt(prompt, model, { maxBudget: job.maxBudget, gasPrice });
           if (routed) {
             const { encrypt: encR, encPub: encPubR } = this._chatVisibility(job);
             const profileR = encR
@@ -8500,7 +8537,6 @@ export class DAIMinerNode {
 
         const qvac = await getQvacModels();
         if (!qvac || !qvac.ENABLED) throw new Error('Inference backend (QVAC) is unavailable on this miner');
-        const gasPrice  = this.config.gasPrice || GAS.DEFAULT_GAS_PRICE;
         const isPaid    = job.requesterAddress && job.maxBudget > 0;
         const promptEst = qvac.estimateMessagesTokens(messages);
         const hardCap   = isPaid ? outputTokenCap(job.maxBudget, gasPrice, promptEst) : 0;
@@ -8755,7 +8791,7 @@ export class DAIMinerNode {
         // Auto-route through task cascade / skills (unless a dataset is pinned or route:false),
         // so "search the web: …" and multi-step cascades work via the jobs API too.
         if (!dataset && job.route !== false && job.payload?.route !== false && !hasImages) {
-          const routed = await this._routeComputePrompt(prompt, model);
+          const routed = await this._routeComputePrompt(prompt, model, { maxBudget: job.maxBudget, gasPrice });
           if (routed) {
             reply = routed.reply; tokensUsed = routed.tokensUsed; routedSkillId = routed.skillId;
             if (routed.contributions?.length) routedContributions = routed.contributions;
