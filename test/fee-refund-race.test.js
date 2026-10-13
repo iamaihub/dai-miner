@@ -16,16 +16,16 @@ const paidJob = (id, maxBudget) => {
   };
 };
 
-describe('no-refund settlement (change 1)', () => {
-  it('takes the whole bid as the fee regardless of tokens used', () => {
-    // Used far fewer tokens than budgeted — still no refund.
+describe('metered settlement', () => {
+  it('charges the actual token cost, refunding the unused part of the bid', () => {
+    // Used far fewer tokens than budgeted — gets the difference back.
     const { fee, refund, cost } = settleFee(300, 1, 5000);
-    expect(fee).toBe(5000);
-    expect(refund).toBe(0);
-    expect(cost).toBe(300); // diagnostic: tokens actually consumed
+    expect(fee).toBe(300);
+    expect(refund).toBe(4700);
+    expect(cost).toBe(300);
   });
 
-  it('flags underfunded when consumed cost exceeds the bid (should not happen post-cap)', () => {
+  it('caps the fee at the bid and flags underfunded when consumed cost exceeds it (should not happen post-cap)', () => {
     const { fee, refund, underfunded } = settleFee(6000, 1, 5000);
     expect(fee).toBe(5000);   // capped — never over-charges
     expect(refund).toBe(0);

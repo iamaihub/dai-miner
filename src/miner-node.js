@@ -1256,22 +1256,37 @@ export class DAIMinerNode {
     } else {
       this._mcpAssignment = null;
     }
+    // Local (not instance-level) accumulator — a per-call total, safe under
+    // concurrent cascades on the same node. Billing needs a real number here:
+    // without it, a cascade settles on tokensUsed=0/undefined regardless of how
+    // many skills/MCPs/LLM calls it actually ran (see settleFee in gas-estimator.js).
+    let cascadeTokens = 0;
+    const estTokens = (s) => Math.ceil(String(s ?? '').length / 4);
     const runners = {
       model: model || this.config.model,
       getBrainDataDir,
       runSkill: async (skillId, input) => {
-        const { output } = await skillsManager.runSkill(skillId, input, this.config);
+        const { output, tokensUsed } = await skillsManager.runSkill(skillId, input, this.config);
+        cascadeTokens += tokensUsed || estTokens(JSON.stringify(output));
         return output;
       },
       callMcp: async (toolName, args) => {
         if (!this.mcp?.callTool) throw new Error('MCP not initialized');
         await this._initMcp();
-        return this._dispatchMcp(toolName, args || {}, assignment);
+        const out = await this._dispatchMcp(toolName, args || {}, assignment);
+        cascadeTokens += estTokens(out);
+        return out;
       },
-      llm: async (messages, opts = {}) => this._llmChat(messages, { model: opts.model || model, timeoutMs: opts.timeoutMs || 60_000 }),
+      llm: async (messages, opts = {}) => {
+        const text = await this._llmChat(messages, { model: opts.model || model, timeoutMs: opts.timeoutMs || 60_000 });
+        const promptChars = messages.reduce((n, m) => n + (m.content?.length || 0), 0);
+        cascadeTokens += estTokens(text) + Math.ceil(promptChars / 4);
+        return text;
+      },
     };
     try {
-      return await executeTaskCascade(plan, runners, message);
+      const result = await executeTaskCascade(plan, runners, message);
+      return { ...result, tokensUsed: cascadeTokens };
     } finally {
       this._mcpAssignment = null;
     }
@@ -8160,8 +8175,8 @@ export class DAIMinerNode {
     // Mixed task cascade (skills + MCP + datasets + media) — full executor
     if (route.type === 'tasks' && route.tasks) {
       try {
-        const { reply, results } = await this._runTaskCascade(route.tasks, { model, message: prompt });
-        if (reply) return { reply, skillId: 'task-cascade', results };
+        const { reply, results, tokensUsed } = await this._runTaskCascade(route.tasks, { model, message: prompt });
+        if (reply) return { reply, skillId: 'task-cascade', results, tokensUsed };
       } catch (e) {
         console.warn('[compute] task cascade failed:', e.message);
       }
@@ -8170,8 +8185,8 @@ export class DAIMinerNode {
     // Multi-skill cascade
     if (route.type === 'cascade' && route.tasks) {
       try {
-        const { reply } = await this._runTaskCascade(route.tasks, { model, message: prompt });
-        if (reply) return { reply, skillId: 'cascade' };
+        const { reply, tokensUsed } = await this._runTaskCascade(route.tasks, { model, message: prompt });
+        if (reply) return { reply, skillId: 'cascade', tokensUsed };
       } catch { /* fall through */ }
     }
     if (route.type === 'cascade' && route.jobs?.length) {
@@ -8184,8 +8199,8 @@ export class DAIMinerNode {
           }))],
           reason: route.reason,
         };
-        const { reply } = await this._runTaskCascade(plan, { model, message: prompt });
-        if (reply) return { reply, skillId: 'cascade' };
+        const { reply, tokensUsed } = await this._runTaskCascade(plan, { model, message: prompt });
+        if (reply) return { reply, skillId: 'cascade', tokensUsed };
       } catch { /* fall through */ }
     }
     if (route.type !== 'skill') return null;
