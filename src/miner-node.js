@@ -2278,7 +2278,7 @@ export class DAIMinerNode {
         req.on('data', c => body += c);
         req.on('end', () => {
           try {
-            const { stars, rating: legacyRating, comment, requesterAddress, signature } = JSON.parse(body);
+            const { stars, rating: legacyRating, comment, requesterAddress, signature, prompt, reply } = JSON.parse(body);
 
             // New: 5-star rating (1-5 int). Legacy: 'positive'|'negative' string still accepted.
             const hasStars = Number.isInteger(stars) && stars >= 1 && stars <= 5;
@@ -2292,8 +2292,13 @@ export class DAIMinerNode {
               ? (stars >= 4 ? 'positive' : stars <= 2 ? 'negative' : 'neutral')
               : legacyRating;
 
+            // Most replies (plain chat, task cascades, inline skills — anything answered
+            // via /chat/ask rather than a paid /job) have no backend job record at all.
+            // The client already has the prompt+reply text on screen, so accept that as a
+            // fallback instead of 404ing — otherwise most responses could never be rated.
             const rec = this._getJobRecord(jobId);
-            if (!rec) {
+            const hasClientText = typeof prompt === 'string' && prompt.trim() && typeof reply === 'string' && reply.trim();
+            if (!rec && !hasClientText) {
               res.statusCode = 404;
               return res.end(JSON.stringify({ error: 'job not found' }));
             }
@@ -2308,10 +2313,10 @@ export class DAIMinerNode {
             const transition = {
               type:             'job-feedback',
               jobId,
-              jobTxHash:        rec.job?.paymentTxHash || rec.job?._paymentTxHash || null,
+              jobTxHash:        rec?.job?.paymentTxHash || rec?.job?._paymentTxHash || null,
               minerAddress:     this.config.wallet,
-              requesterAddress: requesterAddress || rec.job?.requesterAddress || null,
-              originalVerdict:  rec.result?.verdict || null,
+              requesterAddress: requesterAddress || rec?.job?.requesterAddress || null,
+              originalVerdict:  rec?.result?.verdict || null,
               stars:            hasStars ? stars : null,
               rating,
               comment:          (comment || '').slice(0, FEEDBACK_COMMENT_MAX),
@@ -2332,7 +2337,7 @@ export class DAIMinerNode {
 
             // Fire-and-forget: update brain weights so star ratings actually teach the LLM.
             // Neutral (3★) carries no clear correction signal — skip the brain update for it.
-            const scannedAddress = rec.job?.payload?.address || rec.result?.address;
+            const scannedAddress = rec?.job?.payload?.address || rec?.result?.address;
             const fbAiVerdict    = transition.originalVerdict;
 
             // Chat/compute answers carry no signals to reweight — the lesson is the
@@ -2345,8 +2350,8 @@ export class DAIMinerNode {
                   jobId,
                   stars:   transition.stars,
                   comment: transition.comment,
-                  prompt:  rec.job?.payload?.prompt || rec.job?.payload?.message || '',
-                  reply:   rec.result?.reply || rec.result?.message || '',
+                  prompt:  rec?.job?.payload?.prompt || rec?.job?.payload?.message || prompt || '',
+                  reply:   rec?.result?.reply || rec?.result?.message || reply || '',
                 });
               }).catch(e => console.warn('[DAI-Miner] Brain chat-feedback failed:', e.message));
             }
@@ -2355,7 +2360,7 @@ export class DAIMinerNode {
               const fbCorrection = rating === 'negative'
                 ? (fbAiVerdict === 'HUMAN' ? 'AI' : 'HUMAN')
                 : fbAiVerdict; // positive = user agrees; records dataset without changing weights
-              const fbSignals = Array.isArray(rec.result?.signalsUsed) ? rec.result.signalsUsed : [];
+              const fbSignals = Array.isArray(rec?.result?.signalsUsed) ? rec.result.signalsUsed : [];
               getBrain().then(b => {
                 if (!b?.onVerdictFeedback) return;
                 return b.onVerdictFeedback(scannedAddress, fbAiVerdict, fbCorrection, transition.comment, fbSignals);

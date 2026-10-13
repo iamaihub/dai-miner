@@ -2875,7 +2875,7 @@ async function _signJobPayment(jobId, amount) {
 // limit is enforced here so the textarea and the API agree.
 window.FEEDBACK_COMMENT_MAX = 300;
 
-window._openFeedbackDialog = function(jobId, stars, container) {
+window._openFeedbackDialog = function(jobId, stars, container, prompt, reply) {
   if (!jobId || document.querySelector('.fbdlg-overlay')) return;
   const MAX = window.FEEDBACK_COMMENT_MAX;
   let picked = Math.min(5, Math.max(1, parseInt(stars, 10) || 1));
@@ -2927,7 +2927,7 @@ window._openFeedbackDialog = function(jobId, stars, container) {
   async function submit() {
     const btn = overlay.querySelector('.fbdlg-send');
     btn.disabled = true; btn.textContent = 'Sending…'; errEl.textContent = '';
-    const ok = await window._postJobFeedback(jobId, picked, ta.value.trim());
+    const ok = await window._postJobFeedback(jobId, picked, ta.value.trim(), prompt, reply);
     if (ok === true) {
       if (container) {
         container.innerHTML = `<span class="chat-feedback-label">Thanks! ${'★'.repeat(picked)}${'☆'.repeat(5 - picked)}</span>`;
@@ -2943,7 +2943,10 @@ window._openFeedbackDialog = function(jobId, stars, container) {
 };
 
 // Single POST path shared by both chat renderers. Resolves true, or an error string.
-window._postJobFeedback = async function(jobId, stars, comment) {
+// prompt/reply are a fallback for replies with no backend job record (anything
+// answered via /chat/ask rather than a paid /job) — the server uses them to teach
+// the brain directly instead of 404ing for lack of a job to look the text up from.
+window._postJobFeedback = async function(jobId, stars, comment, prompt, reply) {
   const port = window._minerApiPort || 3456;
   try {
     const r = await fetch(`http://localhost:${port}/api/jobs/${jobId}/feedback`, {
@@ -2953,6 +2956,8 @@ window._postJobFeedback = async function(jobId, stars, comment) {
         stars,
         comment: (comment || '').slice(0, window.FEEDBACK_COMMENT_MAX),
         requesterAddress: window._localWallet,
+        prompt: prompt || undefined,
+        reply: reply || undefined,
       }),
     });
     if (r.ok) return true;
@@ -2964,13 +2969,17 @@ window._postJobFeedback = async function(jobId, stars, comment) {
   }
 };
 
-function _renderJobFeedbackStars(jobId) {
-  const port = window._minerApiPort || 3456;
+// Renders the "Rate this:" star row under a finished AI reply. `prompt`/`reply` are
+// the question+answer text, needed as a fallback when `jobId` isn't a real backend
+// job (see _postJobFeedback) — most replies (chat/cascade/inline-skill) aren't.
+function _renderJobFeedbackStars(jobId, prompt, reply) {
   const msgs = document.getElementById('chat-messages');
   if (!msgs || !jobId) return;
   const fb = document.createElement('div');
   fb.className = 'chat-feedback';
   fb.dataset.jobId = jobId;
+  fb._fbPrompt = prompt || '';
+  fb._fbReply = reply || '';
   const stars = [1, 2, 3, 4, 5].map(n =>
     `<span class="chat-star" data-star="${n}" onclick="window._sendJobFeedback('${jobId}',${n},this.closest('.chat-feedback'))">★</span>`
   ).join('');
@@ -2985,12 +2994,11 @@ function _renderJobFeedbackStars(jobId) {
     });
   });
   msgs.appendChild(fb);
-  if (!window._sendJobFeedback) {
-    window._sendJobFeedback = function(jId, stars2, container) {
-      window._openFeedbackDialog(jId, stars2, container);
-    };
-  }
 }
+
+window._sendJobFeedback = function(jobId, stars, container) {
+  window._openFeedbackDialog(jobId, stars, container, container?._fbPrompt, container?._fbReply);
+};
 
 // ── Public mode: every message is a paid network compute job ───────────────────
 async function submitComputeJob(promptText, jobCtx = {}) {
@@ -3225,34 +3233,9 @@ async function sendChatMessage() {
     return (await r.json()).jobId;
   }
 
-  function _appendFeedbackButtons(jobId) {
-    const msgs = document.getElementById('chat-messages');
-    if (!msgs || !jobId) return;
-    const fb = document.createElement('div');
-    fb.className = 'chat-feedback';
-    fb.dataset.jobId = jobId;
-    const stars = [1, 2, 3, 4, 5].map(n =>
-      `<span class="chat-star" data-star="${n}" onclick="window._sendJobFeedback('${jobId}',${n},this.closest('.chat-feedback'))">★</span>`
-    ).join('');
-    fb.innerHTML = `<span class="chat-feedback-label">Rate this:</span><span class="chat-star-row">${stars}</span>`;
-
-    // Hover preview: fill stars up to the hovered one
-    fb.querySelectorAll('.chat-star').forEach(el => {
-      el.addEventListener('mouseenter', () => {
-        const n = parseInt(el.dataset.star, 10);
-        fb.querySelectorAll('.chat-star').forEach(s => s.classList.toggle('hover', parseInt(s.dataset.star, 10) <= n));
-      });
-      el.addEventListener('mouseleave', () => {
-        fb.querySelectorAll('.chat-star').forEach(s => s.classList.remove('hover'));
-      });
-    });
-
-    msgs.appendChild(fb);
-  }
-
-  window._sendJobFeedback = function(jobId, stars, container) {
-    window._openFeedbackDialog(jobId, stars, container);
-  };
+  // Thin wrapper kept so the many call sites below read naturally — the actual
+  // star row (and window._sendJobFeedback) is the single shared implementation.
+  const _appendFeedbackButtons = (jobId, prompt, reply) => _renderJobFeedbackStars(jobId, prompt, reply);
 
   // Phase 1: poll job until verdict is ready, return raw job result object
   async function _waitForSkillRawOutput(jobId) {
@@ -3380,6 +3363,7 @@ async function sendChatMessage() {
                 const reply = retryData.message || 'Could not answer using the downloaded dataset.';
                 jobShowAssistant(reply);
                 pushAssistantReply(reply);
+                _appendFeedbackButtons(jobId, text, reply);
                 refreshHfDatasetsSettings();
               } else {
                 const errData = await dlRes.json().catch(() => ({}));
@@ -3398,6 +3382,7 @@ async function sendChatMessage() {
             const reply = cascadeData.message || 'Task cascade returned no data.';
             jobShowAssistant(reply);
             pushAssistantReply(reply, cascadeData.skillMemory ? { _skillMemory: cascadeData.skillMemory } : {});
+            _appendFeedbackButtons(jobId, text, reply);
             _skillDone = true;
           } else {
             const errData = await cascadeRes.json().catch(() => ({}));
@@ -3437,6 +3422,7 @@ async function sendChatMessage() {
             const reply = cascadeData.message || route.jobs.map(j => j.skillId).join(' + ') + ' returned no data.';
             jobShowAssistant(reply);
             pushAssistantReply(reply, cascadeData.skillMemory ? { _skillMemory: cascadeData.skillMemory } : {});
+            _appendFeedbackButtons(jobId, text, reply);
           } else {
             const errData = await cascadeRes.json().catch(() => ({}));
             const msg = errData.error || `\`${skillNames}\` failed (HTTP ${cascadeRes.status}).`;
@@ -3475,6 +3461,7 @@ async function sendChatMessage() {
           const reply = seqData.message || `\`${route.skillId}\` returned no result.`;
           jobShowAssistant(reply);
           pushAssistantReply(reply, seqData.skillMemory ? { _skillMemory: seqData.skillMemory } : {});
+          _appendFeedbackButtons(jobId, text, reply);
           _skillDone = true;
         } catch (e) {
           finalizeLastBubble();
@@ -3504,6 +3491,7 @@ async function sendChatMessage() {
             const reply = data.message || 'No Hugging Face models found for that request.';
             jobShowAssistant(reply);
             pushAssistantReply(reply);
+            _appendFeedbackButtons(jobId, text, reply);
           } else {
             const errData = await hfRes.json().catch(() => ({}));
             const msg = errData.error || `Hugging Face model search failed (HTTP ${hfRes.status}).`;
@@ -3557,6 +3545,7 @@ async function sendChatMessage() {
                 const reply = retryData.message || 'Could not answer using the downloaded dataset.';
                 jobShowAssistant(reply);
                 pushAssistantReply(reply);
+                _appendFeedbackButtons(jobId, text, reply);
                 refreshHfDatasetsSettings();
               } else {
                 const errData = await dlRes.json().catch(() => ({}));
@@ -3575,6 +3564,7 @@ async function sendChatMessage() {
             const reply = data.message || 'No answer found.';
             jobShowAssistant(reply);
             pushAssistantReply(reply);
+            _appendFeedbackButtons(jobId, text, reply);
             _skillDone = true;
           }
         } catch (e) {
@@ -3634,6 +3624,7 @@ async function sendChatMessage() {
               const reply = askData.message || `\`${route.skillId}\` returned no data.`;
               jobShowAssistant(reply);
               pushAssistantReply(reply, askData.skillMemory ? { _skillMemory: askData.skillMemory } : {});
+              _appendFeedbackButtons(jobId, text, reply);
               _skillDone = true;
             }
           } else if (!isPrivate) {
@@ -3676,6 +3667,7 @@ async function sendChatMessage() {
             const reply = `**${jobResult.verdict}${pct}**\n\n${jobResult.reasoning || ''}`;
             renderMessage('assistant', reply);
             chatHistory.push({ role: 'assistant', content: reply });
+            _appendFeedbackButtons(jobId, text, reply);
             _skillDone = true;
           } else if (jobResult) {
             const skillOutput  = jobResult.profile?.skillOutput;
@@ -3799,6 +3791,7 @@ async function sendChatMessage() {
               jobFinalize();
               jobShowAssistant(fbData.message);
               pushAssistantReply(fbData.message, fbData.skillMemory ? { _skillMemory: fbData.skillMemory } : {});
+              _appendFeedbackButtons(jobId, text, fbData.message);
               return;
             }
           } catch { /* fall through to the message below */ }
@@ -3861,6 +3854,7 @@ async function sendChatMessage() {
     if (!fullResponse) appendToLastBubble('[No response — the model may still be loading. Try again.]');
     finalizeLastBubble();
     chatHistory.push({ role: 'assistant', content: fullResponse || '[no response]' });
+    if (fullResponse) _appendFeedbackButtons(jobId, text, fullResponse);
   } catch (err) {
     if (err.name === 'AbortError') {
       // User interrupted — finalize whatever was streamed so far
@@ -3981,6 +3975,7 @@ async function useChainHistoryReply(jobId) {
       chatHistory.push({ role: 'user', content: q });
       renderMessage('assistant', reply);
       pushAssistantReply(reply, { fromChainHistory: true, jobId: data.match.jobId });
+      _renderJobFeedbackStars(data.match.jobId, q, reply);
       if (input) { input.value = ''; autoResize(input); }
       const banner = document.getElementById('chat-history-banner');
       if (banner) banner.style.display = 'none';
