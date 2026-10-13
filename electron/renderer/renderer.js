@@ -2487,6 +2487,86 @@ function finalizeLastBubble(bubble) {
   finalizeBubble(bubble || null);
 }
 
+// ── Cascade status animation ────────────────────────────────────────────────────
+// "Running task cascade…" / "Submitting paid compute job…" have no real progress
+// signal — the backend runs the whole thing in one request/response round trip —
+// so this renders a code-block status display (a random status word, plus one
+// animated bar per task) purely as visual feedback that something is happening.
+
+const CASCADE_STATUS_WORDS = [
+  'Processing', 'Computing', 'Analyzing', 'Synthesizing', 'Reasoning', 'Evaluating',
+  'Generating', 'Orchestrating', 'Coordinating', 'Executing', 'Assembling', 'Resolving',
+  'Inferring', 'Deliberating', 'Formulating', 'Crafting', 'Building', 'Compiling',
+  'Integrating', 'Orchestrating cascade', 'Running cascade', 'Activating cascade',
+  'Launching cascade', 'Spinning up cascade', 'Cascading', 'Chaining', 'Sequencing',
+  'Delegating', 'Routing', 'Dispatching', 'Invoking', 'Querying', 'Fetching',
+  'Gathering', 'Collecting', 'Retrieving', 'Consulting', 'Consulting tools',
+  'Consulting skills', 'Calling tools', 'Calling MCPs', 'Invoking skills',
+  'Coordinating agents', 'Multi-step reasoning', 'Multi-agent flow', 'Tool orchestration',
+  'Skill cascade', 'MCP cascade', 'Parallel processing', 'Sequential processing',
+  'Deep analysis', 'Structured reasoning', 'Stepwise execution', 'Workflow running',
+  'Pipeline active', 'Graph executing', 'Nodes processing', 'Tasks in flight',
+  'Subtasks running', 'Background work', 'In progress', 'Still working', 'Almost there',
+  'Finalizing', 'Wrapping up', 'Assembling response', 'Compiling results',
+  'Synthesizing output', 'Drafting answer', 'Refining', 'Polishing', 'Validating',
+  'Cross-checking', 'Verifying', 'Double-checking', 'Connecting dots', 'Weaving together',
+  'Piecing together', 'Mapping dependencies', 'Resolving dependencies', 'Expanding context',
+  'Enriching', 'Augmenting', 'Grounding', 'Citing', 'Attributing', 'Reasoning chain',
+  'Thought process', 'Internal monologue', 'Active inference', 'Latent computation',
+  'Model thinking', 'Agent thinking', 'Cascade thinking', 'Working…', 'Thinking…',
+  'Computing…', 'Processing cascade…', 'Cascade in motion', 'Result incoming',
+];
+
+function _cascadeRandomWord() {
+  return CASCADE_STATUS_WORDS[Math.floor(Math.random() * CASCADE_STATUS_WORDS.length)];
+}
+
+function _cascadeBar(frac, width = 10) {
+  const filled = Math.max(0, Math.min(width, Math.round(frac * width)));
+  return '█'.repeat(filled) + '░'.repeat(width - filled);
+}
+
+/** Flattens a /chat/route `tasks` response into display ids like "mcp:public-apis". */
+function cascadeItemsFromRoute(route) {
+  const items = [];
+  for (const stage of route?.tasks?.stages || []) {
+    for (const t of stage) {
+      const name = t.skillId || t.server || t.tool || t.id || t.kind;
+      if (name) items.push(`${t.kind}:${name}`);
+    }
+  }
+  if (items.length) return items;
+  const m = /cascade:\s*(.+)/.exec(route?.reason || '');
+  if (m) return m[1].split(/[+→]/).map(s => s.trim()).filter(Boolean);
+  return ['task'];
+}
+
+function _cascadeBlockText(items, word, tick) {
+  const width = Math.max(...items.map(s => s.length));
+  const lines = items.map((name, i) => {
+    const phase = tick * 0.35 + i * 1.7;
+    const frac = 0.15 + ((Math.sin(phase) + 1) / 2) * 0.8; // oscillate, never pinned at 0/full
+    return `  ${name.padEnd(width + 2)}${_cascadeBar(frac)}`;
+  });
+  return '```\n▶ ' + word + '\n' + lines.join('\n') + '\n```';
+}
+
+/** Animates a status block into `bubble` every 450ms until the returned fn is called. */
+function startCascadeAnimation(bubble, items) {
+  if (!bubble) return () => {};
+  let tick = 0;
+  let word = _cascadeRandomWord();
+  const render = () => {
+    if (!bubble.isConnected) { clearInterval(timer); return; }
+    bubble._rawText = _cascadeBlockText(items, word, tick);
+    bubble.innerHTML = _mdParse(bubble._rawText);
+    tick++;
+    if (tick % 4 === 0) word = _cascadeRandomWord(); // word changes slower than the bars
+  };
+  const timer = setInterval(render, 450);
+  return () => clearInterval(timer);
+}
+
 // ── Send + stream ──────────────────────────────────────────────────────────────
 
 // ── Fee currency ──────────────────────────────────────────────────────────────
@@ -2919,7 +2999,8 @@ async function submitComputeJob(promptText, jobCtx = {}) {
   const budget = getChatBudget();
   const input = document.getElementById('chat-input');
   const isPrivate = window._chatPrivate !== false;
-  const { bubble: jobBubble, history: historyForJob, dataset, attachments } = jobCtx;
+  let { bubble: jobBubble, stopAnim } = jobCtx;
+  const { history: historyForJob, dataset, attachments } = jobCtx;
   const hist = historyForJob || chatHistory.slice(0, -1);
   const append = (t) => appendToBubble(jobBubble, t);
   const finalize = () => finalizeBubble(jobBubble);
@@ -2938,7 +3019,10 @@ async function submitComputeJob(promptText, jobCtx = {}) {
     return;
   }
 
-  if (!jobBubble) renderMessage('assistant', 'Submitting paid compute job…', true);
+  if (!jobBubble) {
+    jobBubble = renderMessage('assistant', _cascadeBlockText(['compute-job'], _cascadeRandomWord(), 0), false);
+    stopAnim = startCascadeAnimation(jobBubble, ['compute-job']);
+  }
 
   try {
     const jobId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -2967,6 +3051,7 @@ async function submitComputeJob(promptText, jobCtx = {}) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(jobBody),
     });
+    stopAnim?.(); // the polling loop below owns the bubble from here (dot progress)
     if (!jobRes.ok) {
       const err = await jobRes.json().catch(() => ({}));
       throw new Error(err.error || `Job submit failed (HTTP ${jobRes.status})`);
@@ -3017,6 +3102,7 @@ async function submitComputeJob(promptText, jobCtx = {}) {
       showReply('Compute job is taking longer than 7 minutes — the miner may be on slow CPU-only hardware. It may still complete; check the Explorer for the result.');
     }
   } catch (e) {
+    stopAnim?.(); // in case the throw happened before the /job fetch ever stopped it
     finalize();
     showReply(`Could not submit paid job: ${e.message}`);
   } finally {
@@ -3262,8 +3348,9 @@ async function sendChatMessage() {
       const route = await routeRes.json();
       // Unified task cascade (skills + MCP + datasets + media models)
       if (!_skillDone && route.type === 'tasks') {
-        const label = route.reason || 'task cascade';
-        jobShowAssistant(`Running task cascade… (${label})`, true);
+        const cascadeItems = cascadeItemsFromRoute(route);
+        jobShowAssistant(_cascadeBlockText(cascadeItems, _cascadeRandomWord(), 0), false);
+        const stopCascadeAnim = startCascadeAnimation(jobBubble, cascadeItems);
         _bubbleShown = true;
         chatAbortController = jobAbort;
         try {
@@ -3273,6 +3360,7 @@ async function sendChatMessage() {
             body: JSON.stringify(_chatAskPayload(text, historySnapshot, isPrivate, { model })),
             signal: AbortSignal.timeout(120000),
           });
+          stopCascadeAnim();
           jobFinalize();
           if (cascadeRes.status === 412) {
             const info = await cascadeRes.json();
@@ -3319,6 +3407,7 @@ async function sendChatMessage() {
             _skillDone = true;
           }
         } catch (e) {
+          stopCascadeAnim();
           finalizeLastBubble();
           console.warn('[tasks] /chat/ask failed:', e.message);
           const msg = `Task cascade failed: ${e.message}`;
@@ -3643,14 +3732,17 @@ async function sendChatMessage() {
   // Public mode with no skill match: paid network compute job (async queue)
   // Task cascade still runs on the receiving miner via _routeComputePrompt.
   if (!isPrivate) {
-    jobShowAssistant('Submitting paid compute job…', true);
+    jobShowAssistant(_cascadeBlockText(['compute-job'], _cascadeRandomWord(), 0), false);
+    const stopJobAnim = startCascadeAnimation(jobBubble, ['compute-job']);
     try {
       await submitComputeJob(llmText, {
         bubble: jobBubble,
         history: historySnapshot,
         attachments: window._pendingChatAttachments,
+        stopAnim: stopJobAnim,
       });
     } finally {
+      stopJobAnim(); // safety net if submitComputeJob errored before its own stop call
       _endChatJob();
     }
     return;
