@@ -118,15 +118,18 @@ export function outputTokenCap(maxBudget, gasPrice = GAS.DEFAULT_GAS_PRICE, prom
   return Math.max(0, Math.min(budgetTokens, contextTokens, GAS.OUTPUT_HARD_MAX));
 }
 
-// No-refund settlement. maxBudget is the requester's signed bid, and the whole bid
-// is taken as the fee — overpaying buys queue priority (see the fee-race in
-// job-board.js), never a rebate. The floor still holds two ways: the accept-time
-// gate rejects any bid below the job's token cost, and generation is capped at
-// outputTokenCap(maxBudget), so `cost` can never exceed maxBudget in practice
-// (`underfunded` is surfaced only as a diagnostic).
+// Metered settlement. maxBudget is the requester's signed bid and a hard ceiling —
+// generation is capped at outputTokenCap(maxBudget), so cost can't exceed it in
+// practice — but the fee actually charged is the ACTUAL token cost, not the whole
+// bid. Overpaying buys queue priority (see the fee-race in job-board.js) AND gets
+// refunded once the real cost is known: harder jobs (more tokens, e.g. a cascade
+// that ran several tools) cost more; a trivial reply on a generous budget refunds
+// the difference. `underfunded` flags the (should-be-impossible) case where cost
+// still exceeded the bid.
 export function settleFee(actualTokens, gasPrice, maxBudget) {
   const cost = Math.max(0, Math.round(actualTokens * gasPrice)); // tokens actually consumed
-  return { fee: maxBudget, refund: 0, cost, underfunded: cost > maxBudget };
+  const fee = Math.min(cost, maxBudget);
+  return { fee, refund: Math.max(0, maxBudget - fee), cost, underfunded: cost > maxBudget };
 }
 
 export function timeoutFee(maxBudget, pct = GAS.TIMEOUT_RESERVE_PCT) {

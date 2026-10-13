@@ -8483,7 +8483,8 @@ export class DAIMinerNode {
         console.error(`[DAI-Miner] Skill job ${job.id} failed:`, err.message);
         this._updateJob(job.id, { status: 'error', error: err.message });
         if (job.requesterAddress && job.maxBudget > 0 && this.escrow.has(job.id)) {
-          const timeout = { type: 'job-timeout', jobId: job.id, requesterAddress: job.requesterAddress, minerAddress: this.config.wallet, reservationFee: 0, refund: job.maxBudget, ...(job.currency && job.currency !== 'DAI' ? { currency: job.currency } : {}), completedAt: Date.now() };
+          const { reservation, refund } = timeoutFee(job.maxBudget);
+          const timeout = { type: 'job-timeout', jobId: job.id, requesterAddress: job.requesterAddress, minerAddress: this.config.wallet, reservationFee: reservation, refund, ...(job.currency && job.currency !== 'DAI' ? { currency: job.currency } : {}), completedAt: Date.now() };
           this.pendingBrainTransitions.push(timeout);
           this._applySettlement(timeout);
         }
@@ -8644,7 +8645,8 @@ export class DAIMinerNode {
         console.error(`[DAI-Miner] Compute job ${job.id} failed:`, err.message);
         this._updateJob(job.id, { status: 'error', error: err.message });
         if (job.requesterAddress && job.maxBudget > 0 && this.escrow.has(job.id)) {
-          const timeout = { type: 'job-timeout', jobId: job.id, requesterAddress: job.requesterAddress, minerAddress: this.config.wallet, reservationFee: 0, refund: job.maxBudget, ...(job.currency && job.currency !== 'DAI' ? { currency: job.currency } : {}), completedAt: Date.now() };
+          const { reservation, refund } = timeoutFee(job.maxBudget);
+          const timeout = { type: 'job-timeout', jobId: job.id, requesterAddress: job.requesterAddress, minerAddress: this.config.wallet, reservationFee: reservation, refund, ...(job.currency && job.currency !== 'DAI' ? { currency: job.currency } : {}), completedAt: Date.now() };
           this.pendingBrainTransitions.push(timeout);
           this._applySettlement(timeout);
         }
@@ -8744,7 +8746,8 @@ export class DAIMinerNode {
         rec.updatedAt = Date.now();
       }
       if (job.requesterAddress && job.maxBudget > 0 && this.escrow.has(job.id)) {
-        const timeout = { type: 'job-timeout', jobId: job.id, requesterAddress: job.requesterAddress, minerAddress: this.config.wallet, reservationFee: 0, refund: job.maxBudget, ...(job.currency && job.currency !== 'DAI' ? { currency: job.currency } : {}), completedAt: Date.now() };
+        const { reservation, refund } = timeoutFee(job.maxBudget);
+        const timeout = { type: 'job-timeout', jobId: job.id, requesterAddress: job.requesterAddress, minerAddress: this.config.wallet, reservationFee: reservation, refund, ...(job.currency && job.currency !== 'DAI' ? { currency: job.currency } : {}), completedAt: Date.now() };
         this.pendingBrainTransitions.push(timeout);
         this._applySettlement(timeout);
       }
@@ -8869,7 +8872,8 @@ export class DAIMinerNode {
     // streaming); omitted, this is exactly the previous call.
     const usage = await qvac.chat(messages, { model, timeLimit: 90_000, systemPrompt, withUsage: true, hardTokenCap: hardCap, ...(maxTokens ? { maxTokens } : {}), ...(onToken ? { onToken } : {}) });
     if (usage == null || usage.text == null) {
-      const timeout = { type: 'job-timeout', jobId, requesterAddress, minerAddress: this.config.wallet, reservationFee: 0, refund: maxBudget, completedAt: Date.now() };
+      const { reservation, refund } = timeoutFee(maxBudget);
+      const timeout = { type: 'job-timeout', jobId, requesterAddress, minerAddress: this.config.wallet, reservationFee: reservation, refund, completedAt: Date.now() };
       this.pendingBrainTransitions.push(timeout);
       this._applySettlement(timeout);
       return { status: 503, code: 'NO_OUTPUT', error: `Model "${model}" produced no output` };
