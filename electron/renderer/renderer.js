@@ -5774,7 +5774,7 @@ async function submitSkill() {
 
 // Static fallback only — the live lists come from GET /api/p2p/currencies
 // (off-chain quote legs + on-chain assets) via _p2pLoadCurrencies().
-let QUOTE_CURRENCIES = ['USDT-ERC20','USDT-TRC20','USDT-TON','USDT-SOL','USDT-BEP20','USDC-ERC20','BTC','ETH','SOL','Bank Transfer'];
+let QUOTE_CURRENCIES = ['USDT-ERC20','USDT-TRC20','USDT-TON','USDT-SOL','USDT-BEP20','USDC-ERC20','DAI-ERC20','BTC','ETH','SOL','Bank Transfer'];
 let P2P_ONCHAIN = ['DAI'];
 async function _p2pLoadCurrencies() {
   try {
@@ -6169,7 +6169,7 @@ async function p2pLoadOrders(silent = false) {
   // Compute best USD rate from open USDT/USDC sell orders
   const stableOrders = _p2pOrders.filter(o =>
     o.status === 'open' && o.side === 'sell' &&
-    ['USDT-ERC20','USDT-TRC20','USDT-TON','USDT-SOL','USDT-BEP20','USDC-ERC20'].includes(o.quoteCurrency)
+    ['USDT-ERC20','USDT-TRC20','USDT-TON','USDT-SOL','USDT-BEP20','USDC-ERC20','DAI-ERC20'].includes(o.quoteCurrency)
   );
   _p2pBestUsdRate = stableOrders.length
     ? Math.max(...stableOrders.map(o => parseFloat(o.pricePerDAI) || 0))

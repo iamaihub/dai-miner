@@ -22,7 +22,7 @@ import { ASSETS, STABLE_TICKERS, normalizeCurrency } from '../assets.js';
 
 /** Dollar-pegged quotes — a price in these is a price in USD. */
 export const USD_QUOTES = [
-  'USDT-ERC20', 'USDT-TRC20', 'USDT-TON', 'USDT-SOL', 'USDT-BEP20', 'USDC-ERC20',
+  'USDT-ERC20', 'USDT-TRC20', 'USDT-TON', 'USDT-SOL', 'USDT-BEP20', 'USDC-ERC20', 'DAI-ERC20',
 ];
 
 const FOREX_URL = 'https://open.er-api.com/v6/latest/USD';

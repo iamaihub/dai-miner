@@ -8,7 +8,7 @@ import { STABLE_TICKERS } from '../assets.js';
 // DAI chain (settled manually with payment proof + release).
 export const QUOTE_CURRENCIES = [
   'USDT-ERC20', 'USDT-TRC20', 'USDT-TON', 'USDT-SOL', 'USDT-BEP20',
-  'USDC-ERC20', 'BTC', 'ETH', 'SOL',
+  'USDC-ERC20', 'DAI-ERC20', 'BTC', 'ETH', 'SOL',
   'Bank Transfer',
 ];
 

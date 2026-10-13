@@ -26,11 +26,11 @@ import { ASSETS, normalizeCurrency, decimalsOf } from '../assets.js';
 /** Quote currencies liquid enough to bridge two thin pairs. */
 export const MAJORS = [
   'USDT-ERC20', 'USDT-TRC20', 'USDT-TON', 'USDT-SOL', 'USDT-BEP20',
-  'USDC-ERC20', 'BTC', 'ETH', 'SOL',
+  'USDC-ERC20', 'DAI-ERC20', 'BTC', 'ETH', 'SOL',
 ];
 
 /** Dollar-pegged majors — a price in these is a price in USD. */
-const USD_MAJORS = new Set(['USDT-ERC20', 'USDT-TRC20', 'USDT-TON', 'USDT-SOL', 'USDT-BEP20', 'USDC-ERC20']);
+const USD_MAJORS = new Set(['USDT-ERC20', 'USDT-TRC20', 'USDT-TON', 'USDT-SOL', 'USDT-BEP20', 'USDC-ERC20', 'DAI-ERC20']);
 
 /** 1 AI token = 1 μDAI; 1 DAI = 1e9 μDAI. */
 export const TOKENS_PER_DAI = 1e9;
