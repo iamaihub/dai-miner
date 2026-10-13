@@ -22,6 +22,18 @@
        narrower breakpoint has to come last or it never applies. */
     @media (max-width: 767px) { html { font-size: 110%; } }
     @media (max-width: 639px) { html { font-size: 100%; } }
+    /* Iceland has no non-Latin glyphs, so these scripts render in the browser's
+       fallback sans-serif, which looks visibly larger at the same font-size. */
+    html:lang(ru), html:lang(ky), html:lang(zh), html:lang(ar), html:lang(fa),
+    html:lang(bn), html:lang(ur), html:lang(am), html:lang(dz) { font-size: 135%; }
+    @media (max-width: 767px) {
+      html:lang(ru), html:lang(ky), html:lang(zh), html:lang(ar), html:lang(fa),
+      html:lang(bn), html:lang(ur), html:lang(am), html:lang(dz) { font-size: 100%; }
+    }
+    @media (max-width: 639px) {
+      html:lang(ru), html:lang(ky), html:lang(zh), html:lang(ar), html:lang(fa),
+      html:lang(bn), html:lang(ur), html:lang(am), html:lang(dz) { font-size: 91%; }
+    }
     .footer-text { font-size: 1.25rem !important; }
 
     .nav-links { display: none; }
@@ -107,12 +119,12 @@
             <span class="meta" data-i18n="blog.p5.date">12 October 2026 · v0.4.40</span>
           </div>
           <h2 class="text-[34px] sm:text-[46px] leading-[1.02]" data-i18n-html="blog.p5.title">
-            The homepage finally stays <span class="neon">home</span>.
+            Your miner just learned to check <span class="neon">real prices</span>.
           </h2>
           <p class="mt-4 text-[18px] sm:text-[21px] muted" data-i18n="blog.p5.excerpt">
-            The website stops bouncing you to the benchmark page on every visit, your miner can now check
-            real prices and market news with no account or API key, SICI joins the nav, and the Buy DAI
-            price is finally a real one.
+            Seventeen new tools let your miner check real prices and market news with no account or API
+            key, SICI joins the nav, the Buy DAI price is finally a real one, and a few small fixes round
+            out the release.
           </p>
           <div class="mt-6 neon text-[20px]" data-i18n="blog.read">Read the post →</div>
         </a>
