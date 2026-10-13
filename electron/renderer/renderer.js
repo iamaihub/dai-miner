@@ -3221,20 +3221,17 @@ async function sendChatMessage() {
   const addrMatch = text.match(ADDR_RE);
 
   async function _submitSkillJob(skillId, payload) {
-    // Paid network skill job — only used in Public mode when /chat/ask cannot run
-    // the skill inline (community/non-private skills). Private mode runs skills
-    // locally via /chat/ask and never reaches here.
+    // Paid, gossiped network skill job — Public mode only (every Public-mode
+    // message goes through a job now, never the free inline /chat/ask path).
     const body = { type: 'skill', skillId, payload };
-    if (!isPrivate) {
-      const budget = getChatBudget();
-      const jobId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const { requesterAddress, txHash, signature } = await _signJobPayment(jobId, budget);
-      body.id = jobId;
-      body.maxBudget = budget;
-      body.currency = getChatFeeCurrency();
-      body.requesterAddress = requesterAddress;
-      body.paymentTx = { txHash, signature };
-    }
+    const budget = getChatBudget();
+    const skillJobId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const { requesterAddress, txHash, signature } = await _signJobPayment(skillJobId, budget);
+    body.id = skillJobId;
+    body.maxBudget = budget;
+    body.currency = getChatFeeCurrency();
+    body.requesterAddress = requesterAddress;
+    body.paymentTx = { txHash, signature };
     const r = await fetch(`http://localhost:${port}/job`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (!r.ok) throw new Error(`job submit HTTP ${r.status}`);
     return (await r.json()).jobId;
@@ -3320,6 +3317,91 @@ async function sendChatMessage() {
     chatHistory.push({ role: 'assistant', content: fullReply || '[no response]' });
   }
 
+  // ── Public mode: every reply is a real, gossiped, metered job ──────────────
+  // No free inline path — /chat/ask (used below, Private-mode only) never
+  // creates a job or tells the network anything happened. /chat/route here is
+  // just a free local classification call (for the cascade-animation
+  // placeholder); the backend re-derives the real route itself at job-execution
+  // time (_routeComputePrompt), so the client doesn't need to pre-classify
+  // before submitting.
+  if (!isPrivate) {
+    let route = null;
+    try {
+      const routeRes = await fetch(`http://localhost:${port}/chat/route`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text, budget: getChatBudget() }),
+        signal: AbortSignal.timeout(8000),
+      });
+      if (routeRes.ok) route = await routeRes.json();
+    } catch { /* route is only for the placeholder — fine if it fails */ }
+
+    const cascadeItems = route ? cascadeItemsFromRoute(route) : ['compute-job'];
+    jobShowAssistant(_cascadeBlockText(cascadeItems, _cascadeRandomWord(), 0), false);
+    const stopJobAnim = startCascadeAnimation(jobBubble, cascadeItems);
+    try {
+      if (route?.type === 'skill' && route.skillId) {
+        const skillJobId = await _submitSkillJob(route.skillId, { ...(route.input || {}), question: text });
+        stopJobAnim();
+        const jobResult = await _waitForSkillRawOutput(skillJobId);
+        finalizeLastBubble();
+
+        if (jobResult?._jobError) {
+          const msg = `Skill failed (${jobResult.error || jobResult._jobError}).`;
+          renderMessage('assistant', msg);
+          chatHistory.push({ role: 'assistant', content: msg });
+        } else if (jobResult && jobResult.verdict && jobResult.verdict !== 'SKILL_RESULT') {
+          const pct = jobResult.confidence != null ? ` · ${(jobResult.confidence * 100).toFixed(0)}% confidence` : '';
+          const reply = `**${jobResult.verdict}${pct}**\n\n${jobResult.reasoning || ''}`;
+          renderMessage('assistant', reply);
+          chatHistory.push({ role: 'assistant', content: reply });
+          _appendFeedbackButtons(skillJobId, text, reply);
+        } else if (jobResult) {
+          const skillOutput = jobResult.profile?.skillOutput;
+          const nlResponse  = jobResult.profile?.nlResponse;
+          if (skillOutput === null && !nlResponse) {
+            const msg = 'No data found for this query.';
+            renderMessage('assistant', msg);
+            chatHistory.push({ role: 'assistant', content: msg });
+          } else if (nlResponse) {
+            renderMessage('assistant', nlResponse);
+            chatHistory.push({ role: 'assistant', content: nlResponse });
+            _appendFeedbackButtons(skillJobId, text, nlResponse);
+          } else if (skillOutput?.analysis?.summary) {
+            const reply = skillOutput.analysis.summary;
+            renderMessage('assistant', reply);
+            chatHistory.push({ role: 'assistant', content: reply });
+            _appendFeedbackButtons(skillJobId, text, reply);
+          } else {
+            renderMessage('assistant', '', true);
+            await _streamSkillAnalysis(route.skillContext || '', skillOutput, text);
+            _appendFeedbackButtons(skillJobId, text, '');
+          }
+        } else {
+          const msg = `\`${route.skillId}\` timed out waiting for a response. Please try again.`;
+          renderMessage('assistant', msg);
+          chatHistory.push({ role: 'assistant', content: msg });
+        }
+      } else {
+        await submitComputeJob(llmText, {
+          bubble: jobBubble,
+          history: historySnapshot,
+          attachments: window._pendingChatAttachments,
+          stopAnim: stopJobAnim,
+        });
+      }
+    } catch (e) {
+      stopJobAnim();
+      finalizeLastBubble();
+      const msg = `Something went wrong: ${e.message}`;
+      renderMessage('assistant', msg);
+      chatHistory.push({ role: 'assistant', content: msg });
+    } finally {
+      stopJobAnim(); // safety net if an above path errored before its own stop call
+      _endChatJob();
+    }
+    return;
+  }
+
   let _skillDone = false;
   // Tracks whether a "Fetching data via..." / "Searching..." placeholder bubble is
   // currently on screen, so the outer catch below knows to finalize it with an error
@@ -3327,7 +3409,8 @@ async function sendChatMessage() {
   // second, unrelated reply on top of the stuck placeholder bubble).
   let _bubbleShown = false;
 
-  // Route message to a skill via backend (keyword fast path + LLM fallback)
+  // Route message to a skill via backend (keyword fast path + LLM fallback) — Private
+  // mode only; Public mode returned earlier via its own job-submission branch above.
   try {
     const routeRes = await fetch(`http://localhost:${port}/chat/route`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -3603,10 +3686,10 @@ async function sendChatMessage() {
         _bubbleShown = true;
         chatAbortController = jobAbort;
 
-        // Private mode: run skill locally via /chat/ask (inline sandbox + local LLM).
-        // Public mode: same path for builtin/private skills; community skills fall
-        // through to a paid /job submission below.
-        let needsPaidJob = false;
+        // Private mode only reaches this branch — Public mode returns earlier via
+        // its own job-submission flow above and never gets here at all. Run the
+        // skill locally via /chat/ask (inline sandbox + local LLM); community
+        // skills /chat/ask can't run inline have no private-mode equivalent.
         try {
           const askRes = await fetch(`http://localhost:${port}/chat/ask`, {
             method: 'POST',
@@ -3619,14 +3702,10 @@ async function sendChatMessage() {
           if (askRes.ok) {
             const askData = await askRes.json();
             if (askData.type === 'skill' && askData.skillId) {
-              if (isPrivate) {
-                const msg = `Could not run \`${askData.skillId}\` locally. Switch to Public mode for network skills.`;
-                jobShowAssistant(msg);
-                pushAssistantReply(msg);
-                _skillDone = true;
-              } else {
-                needsPaidJob = true;
-              }
+              const msg = `Could not run \`${askData.skillId}\` locally. Switch to Public mode for network skills.`;
+              jobShowAssistant(msg);
+              pushAssistantReply(msg);
+              _skillDone = true;
             } else {
               const reply = askData.message || `\`${route.skillId}\` returned no data.`;
               jobShowAssistant(reply);
@@ -3634,8 +3713,6 @@ async function sendChatMessage() {
               _appendFeedbackButtons(jobId, text, reply);
               _skillDone = true;
             }
-          } else if (!isPrivate) {
-            needsPaidJob = true;
           } else {
             const errData = await askRes.json().catch(() => ({}));
             const msg = errData.error || `\`${route.skillId}\` failed (HTTP ${askRes.status}).`;
@@ -3645,66 +3722,10 @@ async function sendChatMessage() {
           }
         } catch (e) {
           finalizeLastBubble();
-          if (!isPrivate) {
-            needsPaidJob = true;
-          } else {
-            const msg = `\`${route.skillId}\` failed: ${e.message}`;
-            renderMessage('assistant', msg);
-            chatHistory.push({ role: 'assistant', content: msg });
-            _skillDone = true;
-          }
-        }
-
-        if (needsPaidJob) {
-          jobShowAssistant(`Fetching data via \`${route.skillId}\`…`, true);
-          _bubbleShown = true;
-          chatAbortController = jobAbort;
-
-          const jobId = await _submitSkillJob(route.skillId, { ...(route.input || {}), question: text });
-          const jobResult = await _waitForSkillRawOutput(jobId);
-          finalizeLastBubble();
-
-          if (jobResult?._jobError) {
-            const msg = `Skill failed (${jobResult.error || jobResult._jobError}).`;
-            renderMessage('assistant', msg);
-            chatHistory.push({ role: 'assistant', content: msg });
-            _skillDone = true;
-          } else if (jobResult && jobResult.verdict && jobResult.verdict !== 'SKILL_RESULT') {
-            const pct = jobResult.confidence != null ? ` · ${(jobResult.confidence * 100).toFixed(0)}% confidence` : '';
-            const reply = `**${jobResult.verdict}${pct}**\n\n${jobResult.reasoning || ''}`;
-            renderMessage('assistant', reply);
-            chatHistory.push({ role: 'assistant', content: reply });
-            _appendFeedbackButtons(jobId, text, reply);
-            _skillDone = true;
-          } else if (jobResult) {
-            const skillOutput  = jobResult.profile?.skillOutput;
-            const nlResponse   = jobResult.profile?.nlResponse;
-
-            if (skillOutput === null && !nlResponse) {
-              const msg = 'No data found for this query.';
-              renderMessage('assistant', msg);
-              chatHistory.push({ role: 'assistant', content: msg });
-            } else if (nlResponse) {
-              renderMessage('assistant', nlResponse);
-              chatHistory.push({ role: 'assistant', content: nlResponse });
-              _appendFeedbackButtons(jobId);
-            } else if (skillOutput?.analysis?.summary) {
-              const reply = skillOutput.analysis.summary;
-              renderMessage('assistant', reply);
-              chatHistory.push({ role: 'assistant', content: reply });
-              _appendFeedbackButtons(jobId);
-            } else {
-              renderMessage('assistant', '', true);
-              await _streamSkillAnalysis(route.skillContext || '', skillOutput, text);
-              _appendFeedbackButtons(jobId);
-            }
-            _skillDone = true;
-          } else {
-            const msg = `\`${route.skillId}\` timed out waiting for a response. Please try again.`;
-            renderMessage('assistant', msg);
-            chatHistory.push({ role: 'assistant', content: msg });
-            _skillDone = true;
-          }
+          const msg = `\`${route.skillId}\` failed: ${e.message}`;
+          renderMessage('assistant', msg);
+          chatHistory.push({ role: 'assistant', content: msg });
+          _skillDone = true;
         }
       }
     }
@@ -3727,25 +3748,9 @@ async function sendChatMessage() {
     return;
   }
   // ── End skill routing ─────────────────────────────────────────────────────
-
-  // Public mode with no skill match: paid network compute job (async queue)
-  // Task cascade still runs on the receiving miner via _routeComputePrompt.
-  if (!isPrivate) {
-    jobShowAssistant(_cascadeBlockText(['compute-job'], _cascadeRandomWord(), 0), false);
-    const stopJobAnim = startCascadeAnimation(jobBubble, ['compute-job']);
-    try {
-      await submitComputeJob(llmText, {
-        bubble: jobBubble,
-        history: historySnapshot,
-        attachments: window._pendingChatAttachments,
-        stopAnim: stopJobAnim,
-      });
-    } finally {
-      stopJobAnim(); // safety net if submitComputeJob errored before its own stop call
-      _endChatJob();
-    }
-    return;
-  }
+  // Public mode never reaches this point — it returns earlier via its own
+  // job-submission branch above. Everything from here down is Private-mode-only
+  // (the free, local, inline /api/chat streaming fallback).
 
   jobShowAssistant('', true);
 
@@ -3783,26 +3788,9 @@ async function sendChatMessage() {
       try { errMsg = JSON.parse(errText)?.error || errText; } catch { /* keep raw */ }
       const isInferenceDown = errMsg.toLowerCase().includes('qvac') || errMsg.toLowerCase().includes('inference') || errMsg.toLowerCase().includes('unavailable') || errMsg.toLowerCase().includes('econnrefused');
       if (isInferenceDown) {
-        // Public mode: try a peer miner or a configured cloud AI provider before
-        // telling the user the local model isn't ready yet.
-        if (!isPrivate) {
-          try {
-            const fbRes = await fetch(`http://localhost:${port}/chat/ask`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(_chatAskPayload(text, historySnapshot, false, { model })),
-              signal: AbortSignal.timeout(50000),
-            });
-            const fbData = await fbRes.json();
-            if (fbData?.message && !/local llm is unavailable/i.test(fbData.message)) {
-              jobFinalize();
-              jobShowAssistant(fbData.message);
-              pushAssistantReply(fbData.message, fbData.skillMemory ? { _skillMemory: fbData.skillMemory } : {});
-              _appendFeedbackButtons(jobId, text, fbData.message);
-              return;
-            }
-          } catch { /* fall through to the message below */ }
-        }
+        // This whole function is Private-mode-only from here down (Public mode
+        // returned earlier via its own job-submission branch above), so there's
+        // no peer/cloud fallback to try — just the local model not being ready yet.
         // QVAC loads the model in-process on first use — no service to start.
         const msg = 'The AI model is still loading (it downloads on first use). Please wait a moment and resend your message.';
         appendToLastBubble(msg);
