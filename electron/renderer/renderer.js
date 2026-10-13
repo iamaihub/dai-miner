@@ -3064,6 +3064,11 @@ async function submitComputeJob(promptText, jobCtx = {}) {
       const err = await jobRes.json().catch(() => ({}));
       throw new Error(err.error || `Job submit failed (HTTP ${jobRes.status})`);
     }
+    // Reset to plain text — otherwise the polling dots below get appended onto
+    // the end of the frozen cascade-animation markdown (a closing ``` fence
+    // followed by stray "." / "(30s)" text), which renders as a broken-looking
+    // code block with garbage glued to it.
+    if (jobBubble) { jobBubble._rawText = 'Computing'; jobBubble.innerHTML = 'Computing'; }
 
     // Compute can be slow on CPU-only miners (a small Qwen3 turn has been seen
     // taking ~4 min on a VPS). Poll every 2s for up to POLL_MAX attempts so a
@@ -3137,6 +3142,8 @@ async function sendChatMessage() {
 
   input.value = '';
   input.style.height = '';
+  _hideChatSuggestions();
+  { const banner = document.getElementById('chat-history-banner'); if (banner) banner.style.display = 'none'; }
   if (isPrivate) {
     input.disabled = true;
     setChatStreaming(true);
@@ -3988,7 +3995,12 @@ function chatInputChanged(el) {
   autoResize(el);
   const q = el.value.trim();
   clearTimeout(_chatSuggestTimer);
-  if (q.length < 2) { _hideChatSuggestions(); return; }
+  if (q.length < 2) {
+    _hideChatSuggestions();
+    const banner = document.getElementById('chat-history-banner');
+    if (banner) banner.style.display = 'none';
+    return;
+  }
   _chatSuggestTimer = setTimeout(async () => {
     try {
       const data = await _fetchChatSuggestions(q);

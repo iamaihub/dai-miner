@@ -3796,13 +3796,25 @@ export class DAIMinerNode {
       if (req.method === 'GET' && url.pathname === '/api/search/suggest') {
         const q = url.searchParams.get('q') || '';
         const wallet = url.searchParams.get('wallet') || url.searchParams.get('address') || '';
-        const limit = Math.min(20, parseInt(url.searchParams.get('limit') || '8', 10));
+        // Fetch a wider pool than we'll show — the final top-3 is picked by star
+        // rating, not raw relevance, so narrowing before rating-filtering would
+        // throw away suggestions that might outrank the ones kept.
+        const MAX_SUGGESTIONS = 3;
+        const fetchLimit = Math.min(20, Math.max(parseInt(url.searchParams.get('limit') || '8', 10), 12));
         void (async () => {
           if (this.chatHistorySearch?.enabled) await this.chatHistorySearch.init();
           const result = this.chatHistorySearch?.enabled
-            ? await this.chatHistorySearch.suggest({ q, wallet: wallet || null, limit })
+            ? await this.chatHistorySearch.suggest({ q, wallet: wallet || null, limit: fetchLimit })
             : { suggestions: [], engine: 'disabled' };
-          res.end(JSON.stringify(result));
+          // Rank by star rating — a reply the asker rated 1-2★ is a bad shortcut to
+          // offer again, so it's dropped rather than just sorted low. Unrated
+          // replies (no feedback yet) are kept, ranked after any rated ones.
+          const ranked = (result.suggestions || [])
+            .map(s => ({ ...s, stars: feedbackStore.getByJob(s.jobId)?.stars ?? null }))
+            .filter(s => s.stars == null || s.stars >= 3)
+            .sort((a, b) => (b.stars ?? -1) - (a.stars ?? -1))
+            .slice(0, MAX_SUGGESTIONS);
+          res.end(JSON.stringify({ ...result, suggestions: ranked }));
         })().catch(e => { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); });
         return;
       }
