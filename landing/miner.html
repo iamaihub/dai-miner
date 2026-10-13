@@ -71,6 +71,18 @@
        narrower breakpoint has to come last or it never applies. */
     @media (max-width: 767px) { html { font-size: 110%; } }
     @media (max-width: 639px) { html { font-size: 100%; } }
+    /* Iceland has no non-Latin glyphs, so these scripts render in the browser's
+       fallback sans-serif, which looks visibly larger at the same font-size. */
+    html:lang(ru), html:lang(ky), html:lang(zh), html:lang(ar), html:lang(fa),
+    html:lang(bn), html:lang(ur), html:lang(am), html:lang(dz) { font-size: 135%; }
+    @media (max-width: 767px) {
+      html:lang(ru), html:lang(ky), html:lang(zh), html:lang(ar), html:lang(fa),
+      html:lang(bn), html:lang(ur), html:lang(am), html:lang(dz) { font-size: 100%; }
+    }
+    @media (max-width: 639px) {
+      html:lang(ru), html:lang(ky), html:lang(zh), html:lang(ar), html:lang(fa),
+      html:lang(bn), html:lang(ur), html:lang(am), html:lang(dz) { font-size: 91%; }
+    }
 
     /* Prevent tiny legal / meta text from exploding */
     .text-xs, .text-\[10px\], .text-\[15px\] { font-size: 0.92rem !important; }
