@@ -1242,6 +1242,103 @@ export class DAIMinerNode {
   }
 
   /** Run a task-cascade plan and return the aggregated reply. */
+  // Shared by /chat/ask (interactive) and _routeComputePrompt (job-execution time)
+  // so a paid compute job can answer a 'sequence' route the same way free chat
+  // does, instead of _routeComputePrompt falling through to a generic plain-chat
+  // answer for a route type it didn't know how to handle.
+  // Returns { reply, skillId, tokensUsed } on success, or null to fall through.
+  async _answerSequence(route, { model, message } = {}) {
+    try {
+      const selModel = model || this.config.model;
+      const generated = (await this._llmChat(
+        [
+          { role: 'system', content: 'You write complete, correct code. Respond with a one-line description, then the code in a fenced code block. Do not explain at length — the code is the answer.' },
+          { role: 'user', content: route.creationQuery },
+        ],
+        { model: selModel, timeoutMs: 60_000 },
+      )).trim();
+      if (!generated) return null;
+
+      const skillEntry = skillsManager.getSkill(route.skillId);
+      const systemContent = [
+        'You are a helpful assistant with access to specialized reference documentation.',
+        'Use the reference material below to analyze the content that was just generated. Be specific and practical.',
+        `\nReference documentation (${route.skillId}):\n${(skillEntry?.context || '').slice(0, SKILL_CONTEXT_MAX)}`,
+      ].join('\n');
+      const userContent = `Generated content:\n${generated}\n\nTask: ${route.input?.query || route.input?.message || message}`;
+      const analysis = (await this._llmChat(
+        [{ role: 'system', content: systemContent }, { role: 'user', content: userContent }],
+        { model: selModel, timeoutMs: 40_000 },
+      )).trim();
+
+      const reply = `${generated}\n\n---\n\n${analysis || `(${route.skillId} analysis unavailable)`}`;
+      const tokensUsed = Math.ceil((systemContent.length + userContent.length + reply.length) / 4);
+      return { reply, skillId: route.skillId, tokensUsed };
+    } catch (e) {
+      console.warn('[sequence] pipeline error:', e.message);
+      return null;
+    }
+  }
+
+  // Returns { reply, skillId: 'hf-model', tokensUsed, hfModels } or null.
+  async _answerHfModel(route, { model } = {}) {
+    try {
+      const selModel = model || this.config.model;
+      const candidates = await searchModelsWithFallback(route.query);
+      const models = await pickRelevantModels(route.query, candidates, { model: selModel });
+      const reply = formatModelSuggestions(route.query, models);
+      if (!reply) return null;
+      const tokensUsed = Math.ceil((String(route.query || '').length + reply.length) / 4);
+      return { reply, skillId: 'hf-model', tokensUsed, hfModels: models.map(m => m.id) };
+    } catch (e) {
+      console.warn('[hf-model] pipeline error:', e.message);
+      return null;
+    }
+  }
+
+  // Returns { reply, skillId: 'dataset', tokensUsed, datasetId } on a direct answer,
+  // { needsDownload: {...} } when nobody has the dataset installed (only /chat/ask's
+  // interactive flow can act on this — a job just treats it as "can't answer this
+  // way" and falls through to plain chat), or null to fall through.
+  async _answerDataset(route, { model, message, history, forcedDatasetId } = {}) {
+    try {
+      const selModel = model || this.config.model;
+      const brainDataDir = getBrainDataDir();
+      const candidates = forcedDatasetId ? [] : await searchDatasets(route.query);
+      const datasetId = forcedDatasetId || await disambiguateDataset(route.query, candidates, { model: selModel });
+
+      if (datasetId && brainDataDir && hfDatasetManager.isInstalled(brainDataDir, datasetId)) {
+        const slice = hfDatasetManager.loadRelevantSlice(brainDataDir, datasetId, route.query);
+        const systemContent = [
+          'You are a helpful assistant answering using data from a Hugging Face dataset.',
+          'Use the dataset rows below to answer the user\'s question. Write in clear, human-readable Markdown.',
+          `\nDataset: ${datasetId}\nRelevant rows:\n${slice || '(no matching rows found in the installed dataset)'}`,
+        ].join('\n');
+        const reply = (await this._llmChat(
+          [{ role: 'system', content: systemContent }, { role: 'user', content: message }],
+          { model: selModel, timeoutMs: 40_000 },
+        )).trim();
+        if (!reply) return null;
+        const tokensUsed = Math.ceil((systemContent.length + String(message || '').length + reply.length) / 4);
+        return { reply, skillId: 'dataset', tokensUsed, datasetId };
+      }
+
+      if (datasetId) {
+        const peerReply = await this._relayToPeerForDataset(message, history || [], datasetId);
+        if (peerReply) {
+          const tokensUsed = Math.ceil((String(message || '').length + peerReply.length) / 4);
+          return { reply: peerReply, skillId: 'dataset', tokensUsed, datasetId, _fromPeer: true };
+        }
+        const meta = candidates.find(c => c.id === datasetId) || { id: datasetId };
+        return { needsDownload: { datasetId, description: meta.description || '', estimatedSizeBytes: meta.sizeBytes || null } };
+      }
+      return null; // no relevant dataset found
+    } catch (e) {
+      console.warn('[dataset] pipeline error:', e.message);
+      return null;
+    }
+  }
+
   async _runTaskCascade(plan, { model, message } = {}) {
     const mcpIds = [...new Set((plan.stages || []).flat().filter(t => t.kind === 'mcp').map(t => t.server).filter(Boolean))];
     let assignment = null;
@@ -3263,55 +3360,16 @@ export class DAIMinerNode {
             // first, then feed the generated content into the skill's reference material as
             // context for a second LLM call. Falls through to plain chat if generation fails.
             if (route.type === 'sequence') {
-              try {
-                const selModel   = reqModel || this.config.model;
-
-                // Step 1 — generate the artifact the skill will analyze.
-                const generated  = (await this._llmChat(
-                  [
-                    { role: 'system', content: 'You write complete, correct code. Respond with a one-line description, then the code in a fenced code block. Do not explain at length — the code is the answer.' },
-                    { role: 'user', content: route.creationQuery },
-                  ],
-                  { model: selModel, timeoutMs: 60_000 },
-                )).trim();
-
-                if (!generated) {
-                  return res.end(JSON.stringify({ type: 'chat', message: `Could not generate a response for: "${route.creationQuery}"` }));
-                }
-
-                // Step 2 — run the matched skill against what was just generated.
-                const skillEntry = skillsManager.getSkill(route.skillId);
-                const systemContent = [
-                  'You are a helpful assistant with access to specialized reference documentation.',
-                  'Use the reference material below to analyze the content that was just generated. Be specific and practical.',
-                  `\nReference documentation (${route.skillId}):\n${(skillEntry?.context || '').slice(0, SKILL_CONTEXT_MAX)}`,
-                ].join('\n');
-                const userContent = `Generated content:\n${generated}\n\nTask: ${route.input?.query || route.input?.message || message}`;
-                const analysis  = (await this._llmChat(
-                  [{ role: 'system', content: systemContent }, { role: 'user', content: userContent }],
-                  { model: selModel, timeoutMs: 40_000 },
-                )).trim();
-
-                const reply = `${generated}\n\n---\n\n${analysis || `(${route.skillId} analysis unavailable)`}`;
-                return res.end(JSON.stringify({ type: 'chat', message: reply, sequence: { skillId: route.skillId } }));
-              } catch (e) {
-                console.warn('[chat/ask] sequence pipeline error:', e.message);
-                // fall through to plain chat below
-              }
+              const seq = await this._answerSequence(route, { model: reqModel, message });
+              if (seq) return res.end(JSON.stringify({ type: 'chat', message: seq.reply, sequence: { skillId: seq.skillId } }));
+              // falls through to plain chat below (generation or skill step produced nothing)
             }
 
             // ── Hugging Face model suggestion (video/image/audio generation) ───────
             if (route.type === 'hf-model') {
-              try {
-                const selModel   = reqModel || this.config.model;
-                const candidates = await searchModelsWithFallback(route.query);
-                const models     = await pickRelevantModels(route.query, candidates, { model: selModel });
-                const reply      = formatModelSuggestions(route.query, models);
-                return res.end(JSON.stringify({ type: 'chat', message: reply, hfModels: models.map(m => m.id) }));
-              } catch (e) {
-                console.warn('[chat/ask] hf-model pipeline error:', e.message);
-                // fall through to plain chat below
-              }
+              const hf = await this._answerHfModel(route, { model: reqModel });
+              if (hf) return res.end(JSON.stringify({ type: 'chat', message: hf.reply, hfModels: hf.hfModels }));
+              // falls through to plain chat below
             }
 
             // ── Hugging Face dataset pipeline ─────────────────────────────────────
@@ -3320,58 +3378,25 @@ export class DAIMinerNode {
             // copy, or (if nobody has it) ask the user to approve a download.
             // Falls through to plain chat below if no relevant dataset is found.
             if (route.type === 'dataset') {
-              try {
-                const selModel     = reqModel || this.config.model;
-                const brainDataDir = getBrainDataDir();
-
-                // A peer relay (see _relayToPeerForDataset) already knows which dataset to
-                // use — skip the search+disambiguation round-trip and use it directly.
-                const candidates = forcedDatasetId ? [] : await searchDatasets(route.query);
-                const datasetId  = forcedDatasetId || await disambiguateDataset(route.query, candidates, { model: selModel });
-
-                if (datasetId && brainDataDir && hfDatasetManager.isInstalled(brainDataDir, datasetId)) {
-                  const slice = hfDatasetManager.loadRelevantSlice(brainDataDir, datasetId, route.query);
-                  const systemContent = [
-                    'You are a helpful assistant answering using data from a Hugging Face dataset.',
-                    'Use the dataset rows below to answer the user\'s question. Write in clear, human-readable Markdown.',
-                    `\nDataset: ${datasetId}\nRelevant rows:\n${slice || '(no matching rows found in the installed dataset)'}`,
-                  ].join('\n');
-                  const reply = (await this._llmChat(
-                    [{ role: 'system', content: systemContent }, { role: 'user', content: message }],
-                    { model: selModel, timeoutMs: 40_000 },
-                  )).trim();
-                  return res.end(JSON.stringify({ type: 'chat', message: reply || `No answer could be generated from dataset "${datasetId}".`, dataset: datasetId }));
-                }
-
-                if (datasetId) {
-                  // Not installed locally — see if a peer already has it before asking to download.
-                  const peerReply = await this._relayToPeerForDataset(message, history, datasetId);
-                  if (peerReply) {
-                    return res.end(JSON.stringify({ type: 'chat', message: peerReply, dataset: datasetId, _fromPeer: true }));
-                  }
-
-                  // No peer has it either — ask the user (via the Electron modal) to approve a download.
-                  const meta = candidates.find(c => c.id === datasetId) || { id: datasetId };
-                  res.statusCode = 412;
-                  return res.end(JSON.stringify({
-                    error: `Answering this may require the "${datasetId}" dataset, which isn't installed locally or on a known peer.`,
-                    code: 'HF_DATASET_DOWNLOAD_REQUIRED',
-                    datasetId,
-                    description: meta.description || '',
-                    estimatedSizeBytes: meta.sizeBytes || null,
-                    installInstructions: [
-                      'Approve the download prompt in Chat, or',
-                      `POST /api/hf-dataset/${datasetId}/download on your miner API`,
-                      'Settings → Datasets lists installed copies',
-                      'Stored under ~/.dai-miner/brain-data/hf-datasets/',
-                    ].join(' '),
-                  }));
-                }
-                // datasetId is null — none of the candidates actually help; fall through to plain chat.
-              } catch (e) {
-                console.warn('[chat/ask] dataset pipeline error:', e.message);
-                // fall through to plain chat below
+              const ds = await this._answerDataset(route, { model: reqModel, message, history, forcedDatasetId });
+              if (ds?.needsDownload) {
+                res.statusCode = 412;
+                return res.end(JSON.stringify({
+                  error: `Answering this may require the "${ds.needsDownload.datasetId}" dataset, which isn't installed locally or on a known peer.`,
+                  code: 'HF_DATASET_DOWNLOAD_REQUIRED',
+                  datasetId: ds.needsDownload.datasetId,
+                  description: ds.needsDownload.description,
+                  estimatedSizeBytes: ds.needsDownload.estimatedSizeBytes,
+                  installInstructions: [
+                    'Approve the download prompt in Chat, or',
+                    `POST /api/hf-dataset/${ds.needsDownload.datasetId}/download on your miner API`,
+                    'Settings → Datasets lists installed copies',
+                    'Stored under ~/.dai-miner/brain-data/hf-datasets/',
+                  ].join(' '),
+                }));
               }
+              if (ds) return res.end(JSON.stringify({ type: 'chat', message: ds.reply, dataset: ds.datasetId, ...(ds._fromPeer ? { _fromPeer: true } : {}) }));
+              // no relevant dataset found, or it produced nothing — fall through to plain chat
             }
 
             // ── Unified task cascade (skills + MCP + datasets + HF models) ─────
@@ -8202,6 +8227,20 @@ export class DAIMinerNode {
         const { reply, tokensUsed } = await this._runTaskCascade(plan, { model, message: prompt });
         if (reply) return { reply, skillId: 'cascade', tokensUsed };
       } catch { /* fall through */ }
+    }
+    if (route.type === 'sequence') {
+      const seq = await this._answerSequence(route, { model, message: prompt });
+      return seq ? { reply: seq.reply, skillId: seq.skillId, tokensUsed: seq.tokensUsed } : null;
+    }
+    if (route.type === 'hf-model') {
+      const hf = await this._answerHfModel(route, { model });
+      return hf ? { reply: hf.reply, skillId: hf.skillId, tokensUsed: hf.tokensUsed } : null;
+    }
+    if (route.type === 'dataset') {
+      // A job has no human to approve a download mid-run — needsDownload just
+      // means "can't answer this way", same as any other unmatched route.
+      const ds = await this._answerDataset(route, { model, message: prompt, history: [] });
+      return (ds && !ds.needsDownload) ? { reply: ds.reply, skillId: ds.skillId, tokensUsed: ds.tokensUsed } : null;
     }
     if (route.type !== 'skill') return null;
     const skillEntry = skillsManager.getSkill(route.skillId);
