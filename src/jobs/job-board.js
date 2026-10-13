@@ -283,6 +283,7 @@ export class JobBoard {
         jobType: e.job.type || 'verdict',
         requesterAddress: e.job.requesterAddress || null,
         maxBudget: e.job.maxBudget || 0,
+        currency: e.job.currency || 'DAI',
         paymentTx: e.job.paymentTx || null,
         // So the proposer can write job-submitted + the sealed reply onto the
         // chain. Workers already see this prompt via /jobboard/open.

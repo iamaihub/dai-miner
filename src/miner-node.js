@@ -71,7 +71,7 @@ import { SKILL_CONTEXT_MAX, SKILL_JOB_CONTEXT_MAX } from './skills/limits.js';
 import { feeForLive } from './jobs/gas-price.js';
 import { displayRates } from './rates/display-rates.js';
 import { loadAllSkills, writeSkillFile } from './skills/loader.js';
-import { estimateTokens, estimateChatTokens, outputTokenCap, settleFee, timeoutFee, GAS } from './jobs/gas-estimator.js';
+import { estimateTokens, estimateChatTokens, outputTokenCap, settleFee, timeoutFee, gasPriceFor, GAS } from './jobs/gas-estimator.js';
 import { ASSETS, STABLE_TICKERS, normalizeCurrency, isKnownAsset, decimalsOf, listAssets, fromRaw as assetFromRaw, formatAmount as assetFormatAmount } from './assets.js';
 import { feedbackStore } from './jobs/feedback-store.js';
 
@@ -7873,7 +7873,7 @@ export class DAIMinerNode {
 
     const includedJobIds = [];
     for (const row of results) {
-      const { jobId, worker, result, jobType, requesterAddress, maxBudget, paymentTx } = row;
+      const { jobId, worker, result, jobType, requesterAddress, maxBudget, currency, paymentTx } = row;
       if (!worker || !result || this.minedRequestIds.has(jobId)) continue;
       if (this.pendingValidResults.some(pr => pr.requestId === jobId)) continue;
 
@@ -7882,7 +7882,7 @@ export class DAIMinerNode {
       // Also queue job-submitted + the (sealed) result so the job stays on the
       // chain after the board drops its in-memory copy.
       if (FEE_REQUIRED_JOB_TYPES.has(jobType)) {
-        const settled = await this._settleBoardFeeJob({ jobId, worker, requesterAddress, maxBudget, paymentTx });
+        const settled = await this._settleBoardFeeJob({ jobId, worker, requesterAddress, maxBudget, currency, paymentTx, result });
         if (settled) {
           console.log(`[DAI-Miner] Settled board fee job ${jobId} → worker ${worker.slice(0, 12)}… (${maxBudget} μDAI)`);
           this._queueBoardJobRecord(row);
@@ -7935,7 +7935,14 @@ export class DAIMinerNode {
   // Emits job-escrow + job-settled stateTransitions (applied deterministically by
   // every node), so the debit from the requester and credit to the worker land on
   // the canonical chain. Returns true on success.
-  async _settleBoardFeeJob({ jobId, worker, requesterAddress, maxBudget, paymentTx }) {
+  //
+  // Metered on `result.tokensUsed`, same formula as local settlement — but that
+  // number is self-reported by the worker who posted the result (see
+  // job-board.js postResult), and nothing here verifies it against the actual
+  // prompt/reply. A dishonest worker can currently misreport it. Accepted gap
+  // for now: real verification (re-checking token count from the stored
+  // prompt/reply) is a separate piece of work this does not build.
+  async _settleBoardFeeJob({ jobId, worker, requesterAddress, maxBudget, currency, paymentTx, result }) {
     if (this._appliedEscrowJobIds.has(jobId)) return false;
     if (!requesterAddress || !(maxBudget > 0) || !paymentTx?.signature || typeof paymentTx?.nonce !== 'number') {
       console.warn(`[DAI-Miner] Board fee job ${jobId}: missing/invalid payment — not settling`);
@@ -7965,9 +7972,13 @@ export class DAIMinerNode {
     }
     this.pendingBrainTransitions.push(escrowTransition);
 
+    const gasPrice = gasPriceFor(currency, this.config);
+    const { fee, refund } = settleFee(result?.tokensUsed, gasPrice, maxBudget);
     const settled = {
       type: 'job-settled', jobId, requesterAddress, minerAddress: worker,
-      actualFee: maxBudget, refund: 0, completedAt: Date.now(),
+      actualTokens: result?.tokensUsed ?? null, actualFee: fee, refund, gasPrice,
+      ...(currency && currency !== 'DAI' ? { currency } : {}),
+      completedAt: Date.now(),
     };
     this._applySettlement(settled);
     this.pendingBrainTransitions.push(settled);
@@ -8281,8 +8292,8 @@ export class DAIMinerNode {
     try {
       if (job.type === 'skill' && job.skillId) {
         if (!this.isSkillEnabled(job.skillId)) return null;
-        const { output } = await skillsManager.runSkill(job.skillId, job.payload, this.config, job.maxBudget);
-        return { type: 'skill', skillId: job.skillId, output, computationTimeMs: Date.now() - start };
+        const { output, tokensUsed } = await skillsManager.runSkill(job.skillId, job.payload, this.config, job.maxBudget);
+        return { type: 'skill', skillId: job.skillId, output, tokensUsed, computationTimeMs: Date.now() - start };
       }
       // Compute (LLM) board jobs — run QVAC just like the /job HTTP path. Without this
       // branch a 'compute' job fell through to the verdict/scan path, which then read
@@ -8323,6 +8334,7 @@ export class DAIMinerNode {
               profile: profileR,
               modelUsed: model,
               skillId: routed.skillId,
+              tokensUsed: routed.tokensUsed,
               signalsUsed: [],
               methodsHash: this.methodsManager?.getStatus().hash || 'compute',
               methodsCount: 0,
@@ -8392,6 +8404,7 @@ export class DAIMinerNode {
           reasoning: `Compute job executed with model ${model}` + (datasetUsed ? ` over dataset ${datasetUsed}` : ''),
           profile,
           modelUsed: model,
+          tokensUsed: usage.totalTokens || null,
           signalsUsed: [],
           methodsHash: this.methodsManager?.getStatus().hash || 'compute',
           methodsCount: 0,
