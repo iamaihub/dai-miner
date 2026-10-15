@@ -2,16 +2,21 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script>
-    /* First visit lands on the GPU benchmark. Start Earning sets this flag;
-       afterwards this page stays, until the browser's site data is cleared. */
+    /* First visit lands on the GPU benchmark — desktop only (same breakpoint
+       as .nav-links switching to the full nav, 1024px). Mobile and tablet
+       visitors go straight to this real landing page. Start Earning sets
+       the flag below; afterwards this page stays, until the browser's site
+       data is cleared. Viewport meta must precede this script so
+       innerWidth already reflects the device width, not a desktop default. */
     try {
-      if (localStorage.getItem('dai_real_landing') !== '1') {
+      const isDesktop = window.innerWidth >= 1024;
+      if (isDesktop && localStorage.getItem('dai_real_landing') !== '1') {
         location.replace('gpu-benchmark/index.html');
       }
     } catch (e) {}
   </script>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>DAI (Decentralized Artificial Intelligence) • Modular AI Network, Owned by Its Community</title>
   <meta name="description" content="DAI — Decentralized Artificial Intelligence. A sovereign network you govern. Influence what AI does at the protocol — not through a corporation.">
   <script src="https://cdn.tailwindcss.com"></script>

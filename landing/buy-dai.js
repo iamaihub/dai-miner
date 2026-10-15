@@ -3,9 +3,10 @@
  * DAI/USDT pool. DAI has no mainnet pool yet (nothing here invents an
  * address), so this reads the same cluster.json the sici apps publish and
  * mirrors their own BuyDai screen's logic (apps/landing/src/screens/BuyDai.tsx
- * in /home/bo/Desktop/COMPEX). Any element with [data-buy-dai] becomes one
- * instance; it needs [data-buy-dai-price], [data-buy-dai-sub] and
- * [data-buy-dai-cta] children.
+ * in /home/bo/Desktop/COMPEX), including that screen's read of
+ * `twap.daiPerUsdt` as USDT-per-DAI, not DAI-per-USDT despite the field name.
+ * Any element with [data-buy-dai] becomes one instance; it needs
+ * [data-buy-dai-price], [data-buy-dai-sub] and [data-buy-dai-cta] children.
  */
 (() => {
   const CLUSTER_URL = '/sici/web/cluster.json';
@@ -19,11 +20,11 @@
 
   const paint = (el, state) => {
     el.querySelectorAll('[data-buy-dai-price]').forEach((n) => {
-      n.textContent = state.kind === 'ready' ? `$${state.usdPerDai}` : (state.kind === 'loading' ? '…' : '—');
+      n.textContent = state.kind === 'ready' ? `$${state.usdtPerDai}` : (state.kind === 'loading' ? '…' : '—');
     });
     el.querySelectorAll('[data-buy-dai-sub]').forEach((n) => {
       n.textContent = state.kind === 'ready'
-        ? `1 USDT ≈ ${state.daiPerUsdt} DAI · Sepolia testnet`
+        ? `1 DAI ≈ ${state.usdtPerDai} USDT · Sepolia testnet`
         : (state.kind === 'loading' ? 'Reading the testnet pool…' : 'The testnet pool is not reachable right now.');
     });
     el.querySelectorAll('[data-buy-dai-cta]').forEach((cta) => {
@@ -47,14 +48,16 @@
       .then((cluster) => {
         const dai = cluster.dai;
         const usdt = cluster.usdt;
-        const daiPerUsdt = Number(cluster.twap && cluster.twap.daiPerUsdt);
-        if (!isAddress(dai) || !isAddress(usdt) || !Number.isFinite(daiPerUsdt) || daiPerUsdt <= 0) {
+        // cluster.json's `twap.daiPerUsdt` field name is misleading: its value is
+        // actually USDT per whole DAI (see BuyDai.tsx in COMPEX for the two-way
+        // confirmation against pool reserves and the price oracle).
+        const usdtPerDai = Number(cluster.twap && cluster.twap.daiPerUsdt);
+        if (!isAddress(dai) || !isAddress(usdt) || !Number.isFinite(usdtPerDai) || usdtPerDai <= 0) {
           throw new Error('cluster.json missing testnet pool data');
         }
         const state = {
           kind: 'ready',
-          daiPerUsdt,
-          usdPerDai: (1 / daiPerUsdt).toFixed(4),
+          usdtPerDai: usdtPerDai.toFixed(2),
           buyHref: buildBuyHref(dai, usdt),
         };
         sections.forEach((el) => paint(el, state));
