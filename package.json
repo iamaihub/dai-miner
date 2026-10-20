@@ -65,7 +65,7 @@
   ],
   "license": "MIT",
   "devDependencies": {
-    "@qvac/cli": "^0.15.0",
+    "@qvac/cli": "^0.16.0",
     "@yao-pkg/pkg": "^5.8.1",
     "electron": "^31.4.0",
     "electron-builder": "^24.13.3",
@@ -87,7 +87,7 @@
     "qrcode": "^1.5.4"
   },
   "optionalDependencies": {
-    "@qvac/sdk": "^0.21.0"
+    "@qvac/sdk": "^0.22.0"
   },
   "build": {
     "appId": "kg.iamai.daiminer",
