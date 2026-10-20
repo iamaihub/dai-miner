@@ -20,7 +20,7 @@
     .dai-lang-select {
       background: var(--card) !important; color: var(--ink) !important; border-color: var(--line) !important;
     }
-    .dai-lang-select option { background: var(--card) !important; color: var(--ink) !important; }
+    .dai-lang-list li { background: var(--card) !important; color: var(--ink) !important; }
     h1,h2,h3,.font-display { font-family: 'Iceland', sans-serif; font-weight: 400; }
     .glass { background: rgba(255,255,255,0.86); border: 1px solid var(--line); backdrop-filter: blur(20px); }
     .neon { color: #16a34a; }
@@ -106,6 +106,7 @@
     .mobile-drawer a:last-child { border-bottom: none; }
     @media (min-width: 1024px) { .mobile-drawer { display: none !important; } }
   </style>
+  <link rel="stylesheet" href="../visuals.css">
 </head>
 <body class="overflow-x-hidden">
 
@@ -177,6 +178,8 @@
 
         <!-- Hero iPhone -->
         <div class="lg:w-1/2 flex justify-center">
+          <div class="device-stage">
+            <div class="reward-toast" aria-hidden="true"><span class="live-pip"></span><span>+0.60 DAI</span></div>
           <div class="phone-glow">
             <svg viewBox="0 0 340 700" width="300" xmlns="http://www.w3.org/2000/svg">
               <!-- Phone body -->
@@ -256,6 +259,7 @@
               <text x="262" y="660" text-anchor="middle" fill="#374151" font-size="9" font-family="monospace">Ask AI</text>
             </svg>
           </div>
+          </div>
         </div>
 
       </div>
@@ -279,6 +283,8 @@
       </div>
     </div>
   </div>
+
+  <div class="pocket-band" role="img" aria-label="A phone in the dark, lit by a green light"></div>
 
   <!-- ═══ FEATURE 1: BALANCE ═══ -->
   <div id="balance" class="max-w-7xl mx-auto px-4 sm:px-8 py-14 md:py-32">
@@ -593,6 +599,19 @@
         No accounts, no central server — the app talks to network nodes directly.
       </p>
 
+      <div class="mesh-live" aria-hidden="true">
+        <svg class="mesh-svg" viewBox="0 0 640 150">
+          <path class="mesh-line" d="M70 75 H250"/>
+          <path class="mesh-line" d="M390 75 H570"/>
+          <circle class="mesh-node" cx="70" cy="75" r="16"/>
+          <circle class="mesh-hub" cx="320" cy="75" r="22"/>
+          <circle class="mesh-node" cx="570" cy="75" r="16"/>
+          <circle r="5" fill="#fff">
+            <animateMotion dur="2.6s" repeatCount="indefinite" path="M70 75 H570"/>
+          </circle>
+        </svg>
+      </div>
+
       <div class="grid md:grid-cols-3 gap-6 text-left max-w-4xl mx-auto">
         <div class="glass p-7 rounded-[4px]">
           <div class="text-[#16a34a] text-sm tracking-widest mb-3">01</div>
@@ -614,7 +633,8 @@
   </div>
 
   <!-- ═══ DOWNLOAD ═══ -->
-  <div id="download" class="max-w-5xl mx-auto px-4 sm:px-8 py-14 md:py-32">
+  <div id="download" class="download-stage">
+  <div class="max-w-5xl mx-auto px-4 sm:px-8 py-14 md:py-32">
     <div class="text-center reveal">
       <div class="uppercase tracking-[3px] text-xs text-[#16a34a] mb-4" data-i18n="wal.download.eyebrow">GET THE APP</div>
       <h2 class="font-display text-[48px] sm:text-[72px] md:text-[96px] leading-[0.88] mb-6" data-i18n-html="wal.download.title">Download.<br>Run. Earn.</h2>
@@ -638,6 +658,7 @@
       </div>
 
     </div>
+  </div>
   </div>
 
   <!-- Footer -->

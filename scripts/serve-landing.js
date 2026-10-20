@@ -20,8 +20,14 @@ const MIME = {
   '.json': 'application/json',
   '.apk': 'application/vnd.android.package-archive',
   '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
   '.svg': 'image/svg+xml',
+  '.css': 'text/css',
   '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2',
 };
 
 const server = http.createServer((req, res) => {

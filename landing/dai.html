@@ -135,6 +135,7 @@
       border: 1px solid #d4d6d0 !important;
     }
   </style>
+  <link rel="stylesheet" href="visuals.css">
 </head>
 <body class="overflow-x-hidden">
   <!-- Nav -->
@@ -170,11 +171,19 @@
   </div>
 
   <!-- Hero -->
-  <div class="relative min-h-[100dvh] flex items-center justify-center pt-16 sm:pt-20 hero-bg">
+  <div class="coin-hero relative min-h-[100dvh] flex flex-col items-center justify-center pt-24 sm:pt-28 pb-10 hero-bg">
     <canvas id="coin-mesh" class="absolute inset-0"></canvas>
 
     <div class="relative z-10 max-w-5xl px-6 text-center">
-      
+      <div class="mint" aria-hidden="true">
+        <div class="mint-spin">
+          <div class="mint-slab"></div>
+          <div class="mint-face">
+            <img src="dai-miner-on-light.svg" alt="">
+            <span class="mint-word">DAI</span>
+          </div>
+        </div>
+      </div>
       <h1 class="font-display text-[52px] sm:text-[80px] md:text-[150px] leading-[0.9]" data-i18n-html="idx.hero">
         <span class="neon">AI</span> Works <br>
         You <span class="neon">Earn</span>
@@ -199,6 +208,15 @@
       <div class="uppercase tracking-[3px] text-xs text-[#16a34a] mb-10 text-center reveal" data-i18n="idx.buy.eyebrow">BUY DAI · TESTNET</div>
       <div class="max-w-3xl mx-auto">
         <div class="glass card-hover p-8 md:p-10 rounded-[6px] reveal flex flex-col items-center justify-center text-center" data-buy-dai>
+          <div class="mint mint-sm" aria-hidden="true">
+            <div class="mint-spin">
+              <div class="mint-slab"></div>
+              <div class="mint-face">
+                <img src="dai-miner-on-light.svg" alt="">
+                <span class="mint-word">DAI</span>
+              </div>
+            </div>
+          </div>
           <div class="font-display text-[44px] sm:text-[62px] md:text-[88px] leading-none"><span data-buy-dai-price>…</span></div>
           <p class="mt-4 text-[16px] sm:text-[20px] md:text-[23px] text-[#525252]" data-buy-dai-sub>Reading the testnet pool…</p>
           <a href="#" target="_blank" rel="noopener noreferrer" data-buy-dai-cta
@@ -212,10 +230,10 @@
 
   <!-- Live Network Chart -->
   <div class="border-t border-black/10 py-16 md:py-24">
-    <div class="max-w-5xl mx-auto px-4 sm:px-8">
+    <div class="tape max-w-5xl mx-auto px-4 sm:px-8">
       <div class="flex items-end justify-between mb-6 gap-4 flex-wrap">
         <div>
-          <div class="uppercase tracking-[3px] text-xs text-[#16a34a] mb-2" data-i18n="idx.chart.eyebrow">LIVE NETWORK</div>
+          <div class="uppercase tracking-[3px] text-xs text-[#16a34a] mb-2 flex items-center gap-2"><span class="live-pip" aria-hidden="true"></span><span data-i18n="idx.chart.eyebrow">LIVE NETWORK</span></div>
           <h2 class="font-display text-[32px] sm:text-[42px] leading-none" data-i18n="idx.chart.title">Compute &amp; nodes over time</h2>
         </div>
         <div class="flex items-center gap-6 text-sm">
@@ -239,17 +257,23 @@
     </div>
 
     <div class="grid md:grid-cols-2 gap-8 md:gap-10">
-      <div class="glass card-hover p-8 md:p-10 rounded-[6px] reveal">
+      <div class="glass card-hover rounded-[6px] reveal overflow-hidden">
+        <div class="life-still shot-rig" role="img" aria-label="A home computer with a green light"></div>
+        <div class="p-8 md:p-10">
         <svg class="ico mb-5" viewBox="0 0 24 24"><path d="M12 2v20M2 12h20"/><circle cx="12" cy="12" r="9"/></svg>
         <h3 class="text-[34px] md:text-[50px] tracking-tight mb-3" data-i18n="idx.es.earn.title">Run a node, earn DAI</h3>
         <p class="text-[#525252] text-[17px] md:text-[20px]" data-i18n="idx.es.earn.desc">Your machine solves incoming AI tasks. Every block you win mints fresh DAI straight to your wallet — no cloud, no boss, no cap on how much you run.</p>
         <a href="miner.html#start" class="inline-block mt-6 neon text-[18px] md:text-[22px] hover:underline" data-i18n="idx.es.earn.cta">Download the miner →</a>
+        </div>
       </div>
-      <div class="glass card-hover p-8 md:p-10 rounded-[6px] reveal">
+      <div class="glass card-hover rounded-[6px] reveal overflow-hidden">
+        <div class="life-still shot-desk" role="img" aria-label="A laptop glowing green on a table at night"></div>
+        <div class="p-8 md:p-10">
         <svg class="ico mb-5" viewBox="0 0 24 24"><path d="M3 10h18M7 15h4"/><rect x="2" y="5" width="20" height="14" rx="2"/></svg>
         <h3 class="text-[34px] md:text-[50px] tracking-tight mb-3" data-i18n="idx.es.spend.title">Spend DAI, get compute</h3>
         <p class="text-[#525252] text-[17px] md:text-[20px]" data-i18n="idx.es.spend.desc">Post an AI job with a DAI budget and the fastest node answers it. Deploy skills, stake to secure them, or settle peer-to-peer in seconds.</p>
         <a href="wallet/" class="inline-block mt-6 neon text-[18px] md:text-[22px] hover:underline" data-i18n="idx.es.spend.cta">Open your wallet →</a>
+        </div>
       </div>
     </div>
   </div>
@@ -295,15 +319,15 @@
     </div>
 
     <div class="grid grid-cols-2 md:grid-cols-3 gap-8 md:gap-10 text-center">
-      <div class="glass card-hover p-6 rounded-[6px] reveal">
+      <div class="glass card-hover stat-tile p-6 rounded-[6px] reveal">
         <div class="text-[30px] md:text-[45px] text-[#16a34a] mb-1">DAI</div>
         <div class="text-[15px] md:text-[18px] text-[#525252]" data-i18n="idx.util.1">Earn 1 DAI per block</div>
       </div>
-      <div class="glass card-hover p-6 rounded-[6px] reveal">
+      <div class="glass card-hover stat-tile p-6 rounded-[6px] reveal">
         <div class="text-[30px] md:text-[45px] text-[#16a34a] mb-1">Stablecoins</div>
         <div class="text-[15px] md:text-[18px] text-[#525252]" data-i18n="idx.util.2">Redeemable 1:1 for local sovereign currencies</div>
       </div>
-      <div class="glass card-hover p-6 rounded-[6px] reveal">
+      <div class="glass card-hover stat-tile p-6 rounded-[6px] reveal">
         <div class="text-[30px] md:text-[45px] text-[#16a34a] mb-1">20%</div>
         <div class="text-[15px] md:text-[18px] text-[#525252]" data-i18n="idx.util.3">When your skills are used</div>
       </div>
@@ -318,6 +342,7 @@
         <h2 class="font-display text-[40px] sm:text-[56px] md:text-[76px] leading-none" data-i18n="idx.steps.title">Three steps to your first DAI.</h2>
       </div>
 
+      <div class="flow-track" aria-hidden="true"><span></span></div>
       <div class="grid md:grid-cols-3 gap-8 md:gap-10">
         <div class="glass card-hover p-6 md:p-8 rounded-[6px] reveal">
           <div class="text-[#16a34a] text-[40px] md:text-[56px] font-display leading-none mb-3">01</div>
@@ -339,18 +364,20 @@
   </div>
 
   <!-- Final CTA -->
-  <div class="section-full max-w-5xl mx-auto px-4 sm:px-6 py-20 md:py-44 text-center hero-bg">
-    <h2 class="font-display text-[48px] sm:text-[72px] md:text-[110px] leading-[0.9] reveal" data-i18n-html="idx.final">Put your machine<br><span class="neon">to work tonight.</span></h2>
+  <div class="night-close">
+  <div class="section-full max-w-5xl mx-auto px-4 sm:px-6 py-20 md:py-44 text-center">
+    <h2 style="color:#fff" class="font-display text-[48px] sm:text-[72px] md:text-[110px] leading-[0.9] reveal" data-i18n-html="idx.final">Put your machine<br><span class="neon">to work tonight.</span></h2>
     <div class="mt-14 flex flex-col sm:flex-row gap-4 justify-center reveal">
       <a href="miner.html#start"
          class="inline-flex items-center justify-center px-10 py-4 bg-[#16a34a] text-white text-[20px] sm:text-[26px] md:text-[32px] rounded-[4px] hover:bg-black transition" data-i18n="idx.final.cta1">
         Download &amp; start mining
       </a>
-      <a href="docs/"
+      <!-- <a href="docs/"
          class="inline-flex items-center justify-center px-10 py-4 border border-black/20 hover:bg-black/5 text-[20px] sm:text-[26px] md:text-[32px] rounded-[4px] transition" data-i18n="idx.final.cta2">
         Read the docs
-      </a>
+      </a> -->
     </div>
+  </div>
   </div>
 
   <!-- Footer -->

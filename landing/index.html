@@ -126,10 +126,11 @@
       border: 1px solid #d4d6d0 !important;
     }
   </style>
+  <link rel="stylesheet" href="visuals.css">
 </head>
 <body class="overflow-x-hidden">
   <!-- Nav -->
-  <nav class="border-b border-black/10 bg-[#f5f6f2]/85 backdrop-blur-xl fixed w-full z-50">
+  <nav style="color:#fff" class="border-b border-black/10 bg-[#000]/0 backdrop-blur-xl fixed w-full z-50">
     <div class="max-w-7xl mx-auto px-4 sm:px-8 h-16 sm:h-20 flex items-center justify-between">
       <a href="index.html" class="flex items-center gap-x-2 sm:gap-x-3">
         <img src="dai-miner-on-light.svg" alt="DAI Logo" width="36" height="36" class="sm:w-[48px] sm:h-[48px]" style="vertical-align: middle;" />
@@ -161,15 +162,18 @@
   </div>
 
   <!-- Hero -->
-  <div class="relative min-h-[100dvh] flex items-center justify-center pt-16 sm:pt-20 hero-bg">
-    <div class="relative z-10 max-w-5xl px-6 text-center">
+  <div class="access-hero">
+    <div class="access-hero-photo" role="img" aria-label="A winter city of cooling towers and apartment blocks, windows glowing green"></div>
+    <div class="access-hero-scrim"></div>
+    <div class="access-hero-copy">
       <h1 class="font-display text-[48px] sm:text-[76px] md:text-[130px] leading-[0.9]" data-i18n-html="b2b.hero">
         <span class="neon">Decentralized.</span><br>
         Sovereign.
       </h1>
-      
     </div>
   </div>
+
+  
 
   <!-- Why decentralized -->
   <div class="section-full border-t border-black/10 section-alt">
@@ -204,51 +208,77 @@
     </div>
   </div>
 
+  <div class="place-band" aria-hidden="true">
+    <div class="place shot-desk"></div>
+    <div class="place shot-rig"></div>
+    <div class="place shot-phone"></div>
+  </div>
+
   <!-- Buy DAI -->
   <div class="section-full border-t border-black/10">
     <div class="w-full max-w-3xl mx-auto px-4 sm:px-8 py-16 md:py-32 text-center">
       <div class="uppercase tracking-[3px] text-xs text-[#16a34a] mb-6 reveal" data-i18n="b2b.buy.eyebrow">TESTNET</div>
       <h2 class="font-display text-[40px] sm:text-[56px] md:text-[76px] leading-none mb-10 reveal" data-i18n="b2b.buy.title">Buy DAI.</h2>
       <div class="glass card-hover p-8 md:p-10 rounded-[6px] reveal" data-buy-dai>
+        <div class="mint mint-sm" aria-hidden="true">
+          <div class="mint-spin">
+            <div class="mint-slab"></div>
+            <div class="mint-face">
+              <img src="dai-miner-on-light.svg" alt="">
+              <span class="mint-word">DAI</span>
+            </div>
+          </div>
+        </div>
         <div class="font-display text-[44px] sm:text-[62px] md:text-[80px] leading-none"><span data-buy-dai-price>…</span></div>
         <p class="mt-4 text-[15px] sm:text-[18px] text-[#525252]" data-buy-dai-sub>Reading the testnet pool…</p>
-        <a href="#" target="_blank" rel="noopener noreferrer" data-buy-dai-cta
-           class="inline-flex items-center justify-center mt-8 px-8 py-3 bg-[#16a34a] text-white text-[18px] sm:text-[22px] rounded-[4px] hover:bg-black transition opacity-50 pointer-events-none">
+        <button type="button" data-buy-dai-cta
+           class="inline-flex items-center justify-center mt-8 px-8 py-3 bg-[#16a34a] text-white text-[18px] sm:text-[22px] rounded-[4px] hover:bg-black transition">
           Buy
-        </a>
+        </button>
       </div>
     </div>
   </div>
 
   <!-- What you can build -->
-  <div class="section-full max-w-6xl mx-auto px-4 sm:px-8 py-16 md:py-32">
-    <div class="text-center mb-16 md:mb-24 reveal">
-      <div class="uppercase tracking-[3px] text-xs text-[#16a34a] mb-6" data-i18n="b2b.build.eyebrow">BUILD AND CONTRIBUTE</div>
-      <h2 class="font-display text-[40px] sm:text-[56px] md:text-[76px] leading-none" data-i18n="b2b.build.title">Modular from the ground up.</h2>
-    </div>
+  <div class="text-center py-16 md:py-24 px-4 border-t border-black/10 section-alt reveal">
+    <div class="uppercase tracking-[3px] text-xs text-[#16a34a] mb-6" data-i18n="b2b.build.eyebrow">BUILT FOR BUILDERS</div>
+    <h2 class="font-display text-[40px] sm:text-[56px] md:text-[76px] leading-none" data-i18n="b2b.build.title">Run what your product needs.</h2>
+  </div>
 
-    <div class="grid md:grid-cols-2 gap-8 md:gap-10">
-      <div class="glass card-hover p-8 md:p-10 rounded-[6px] reveal">
-        <svg class="ico mb-5" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2"/><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/></svg>
-        <h3 class="text-[34px] md:text-[50px] tracking-tight mb-3" data-i18n="b2b.build.1t">Compose from modules</h3>
-        <p class="muted text-[17px] md:text-[20px]" data-i18n="b2b.build.1d">Each node is independent. Combine models, tools, agents, and data from peers. No assembly line—pure composition.</p>
-      </div>
-      <div class="glass card-hover p-8 md:p-10 rounded-[6px] reveal">
-        <svg class="ico mb-5" viewBox="0 0 24 24"><path d="M13 2 3 14h7l-1 8 10-12h-7z"/></svg>
-        <h3 class="text-[34px] md:text-[50px] tracking-tight mb-3" data-i18n="b2b.build.2t">Plug in your context</h3>
-        <p class="muted text-[17px] md:text-[20px]" data-i18n="b2b.build.2d">Host your data, datasets, and knowledge. Wire tools via MCP. You decide what your instances see.</p>
-      </div>
-      <div class="glass card-hover p-8 md:p-10 rounded-[6px] reveal">
-        <svg class="ico mb-5" viewBox="0 0 24 24"><path d="M4 17V7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10"/><path d="M2 17h20v2a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z"/></svg>
-        <h3 class="text-[34px] md:text-[50px] tracking-tight mb-3" data-i18n="b2b.build.3t">One open API</h3>
-        <p class="muted text-[17px] md:text-[20px]" data-i18n="b2b.build.3d">Jobs, chat, search, P2P queries—all HTTP. Route to any node or skill. Zero vendor lock-in.</p>
-        <a href="docs/" class="inline-block mt-6 neon text-[18px] md:text-[22px] hover:underline" data-i18n="b2b.build.3cta">Read the API docs →</a>
-      </div>
-      <div class="glass card-hover p-8 md:p-10 rounded-[6px] reveal">
-        <svg class="ico mb-5" viewBox="0 0 24 24"><path d="M12 2v20M2 12h20"/><circle cx="12" cy="12" r="9"/></svg>
-        <h3 class="text-[34px] md:text-[50px] tracking-tight mb-3" data-i18n="b2b.build.4t">Earn &amp; be paid</h3>
-        <p class="muted text-[17px] md:text-[20px]" data-i18n="b2b.build.4d">Your contribution is directly compensated. Per-token rewards for compute, per-job for skills. No intermediary takes a cut.</p>
-      </div>
+  <div class="build-scene">
+    <div class="build-scene-photo build-models" role="img" aria-label="Glowing green model instances spread across a night city skyline"></div>
+    <div class="build-scene-scrim"></div>
+    <div class="build-scene-copy reveal">
+      <h3 class="font-display text-[36px] md:text-[58px] tracking-tight mb-4" data-i18n="b2b.build.1t">Your own models</h3>
+      <p class="muted text-[17px] md:text-[21px]" data-i18n="b2b.build.1d">Bring a custom LLM or pick per job. Mount private datasets or pull from Hugging Face — the network runs it where you say it runs.</p>
+    </div>
+  </div>
+
+  <div class="build-scene">
+    <div class="build-scene-photo build-skills" role="img" aria-label="A workstation wired to live market prices, web search, video and image generation, and blockchain data"></div>
+    <div class="build-scene-scrim"></div>
+    <div class="build-scene-copy reveal">
+      <h3 class="font-display text-[36px] md:text-[58px] tracking-tight mb-4" data-i18n="b2b.build.2t">Agents &amp; skills</h3>
+      <p class="muted text-[17px] md:text-[21px]" data-i18n="b2b.build.2d">Host your data, datasets, and knowledge. Wire tools via MCP. You decide what your instances see.</p>
+    </div>
+  </div>
+
+  <div class="build-scene">
+    <div class="build-scene-photo build-api" role="img" aria-label="A stream of data packets flowing off a desk into the dark"></div>
+    <div class="build-scene-scrim"></div>
+    <div class="build-scene-copy reveal">
+      <h3 class="font-display text-[36px] md:text-[58px] tracking-tight mb-4" data-i18n="b2b.build.3t">One simple API</h3>
+      <p class="muted text-[17px] md:text-[21px]" data-i18n="b2b.build.3d">Everything is one HTTP API — jobs, chat, search, payments. Integrate in an afternoon.</p>
+      <a href="docs/" class="inline-block mt-6 neon text-[18px] md:text-[22px] hover:underline" data-i18n="b2b.build.3cta">Read the API docs →</a>
+    </div>
+  </div>
+
+  <div class="build-scene">
+    <div class="build-scene-photo build-pay" role="img" aria-label="A precise beam of green light measuring the level in a glass"></div>
+    <div class="build-scene-scrim"></div>
+    <div class="build-scene-copy reveal">
+      <h3 class="font-display text-[36px] md:text-[58px] tracking-tight mb-4" data-i18n="b2b.build.4t">Pay per token</h3>
+      <p class="muted text-[17px] md:text-[21px]" data-i18n="b2b.build.4d">Metered per AI compute token with a hard budget per job. Unused budget is refunded — no idle GPUs on your bill.</p>
     </div>
   </div>
 
@@ -260,6 +290,7 @@
         <h2 class="font-display text-[40px] sm:text-[56px] md:text-[76px] leading-none" data-i18n="b2b.how.title">Peer-to-peer, bottom-up.</h2>
       </div>
 
+      <div class="flow-track" aria-hidden="true"><span></span></div>
       <div class="grid md:grid-cols-3 gap-8 md:gap-10 text-center">
         <div class="glass card-hover p-8 rounded-[6px] reveal">
           <div class="text-[#16a34a] text-[40px] md:text-[56px] font-display leading-none mb-3">01</div>

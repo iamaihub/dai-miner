@@ -11970,29 +11970,105 @@
       if (v != null) el.setAttribute('placeholder', v);
     }
     try { localStorage.setItem(STORE_KEY, lang); } catch (e) {}
-    var sels = document.querySelectorAll('.dai-lang-select');
-    for (i = 0; i < sels.length; i++) sels[i].value = lang;
+    var hosts = document.querySelectorAll('[data-i18n-switch]');
+    for (i = 0; i < hosts.length; i++) {
+      if (hosts[i].__daiLangUpdate) hosts[i].__daiLangUpdate(lang);
+    }
   }
 
+  // Closed trigger shows just the 2-letter code (e.g. "EN"); the opened list
+  // still shows code + full name. A native <select> can't show different text
+  // collapsed vs. open — every browser renders the selected <option>'s own
+  // label in both places — so this is a small custom combobox instead.
   function buildSwitch(current) {
     var hosts = document.querySelectorAll('[data-i18n-switch]');
     if (!hosts.length) return;
     for (var h = 0; h < hosts.length; h++) {
-      var sel = document.createElement('select');
-      sel.className = 'dai-lang-select';
-      sel.setAttribute('aria-label', 'Language');
-      sel.style.cssText = 'background:rgba(10,10,10,0.6);color:#fff;border:1px solid #2a2a2a;' +
-        'border-radius:6px;padding:4px 8px;font:inherit;font-size:14px;cursor:pointer;outline:none;';
-      for (var j = 0; j < LANGS.length; j++) {
-        var o = document.createElement('option');
-        o.value = LANGS[j][0];
-        o.textContent = LANGS[j][1] + ' · ' + LANGS[j][2];
-        o.style.color = '#000';
-        sel.appendChild(o);
-      }
-      sel.value = current;
-      sel.addEventListener('change', function (e) { apply(e.target.value); });
-      hosts[h].appendChild(sel);
+      (function (host) {
+        if (!host.style.position) host.style.position = 'relative';
+
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'dai-lang-select';
+        btn.setAttribute('aria-haspopup', 'listbox');
+        btn.setAttribute('aria-expanded', 'false');
+        btn.setAttribute('aria-label', 'Language');
+        btn.style.cssText = 'background:rgba(10,10,10,0.6);color:#fff;border:1px solid #2a2a2a;' +
+          'border-radius:6px;padding:4px 10px;font:inherit;font-size:14px;cursor:pointer;outline:none;' +
+          'display:inline-flex;align-items:center;gap:6px;';
+
+        var codeEl = document.createElement('span');
+        btn.appendChild(codeEl);
+
+        var caret = document.createElement('span');
+        caret.setAttribute('aria-hidden', 'true');
+        caret.style.cssText = 'font-size:10px;opacity:0.7;line-height:1;';
+        caret.textContent = '▾';
+        btn.appendChild(caret);
+
+        var list = document.createElement('ul');
+        list.className = 'dai-lang-list';
+        list.setAttribute('role', 'listbox');
+        list.style.cssText = 'list-style:none;margin:6px 0 0;padding:4px;position:absolute;right:0;top:100%;' +
+          'background:#fff;color:#171717;border:1px solid #d4d6d0;border-radius:8px;min-width:170px;' +
+          'max-height:280px;overflow-y:auto;box-shadow:0 12px 28px rgba(0,0,0,0.18);z-index:60;';
+        list.hidden = true;
+
+        var optionEls = [];
+        for (var j = 0; j < LANGS.length; j++) {
+          (function (code, shortLabel, fullName) {
+            var li = document.createElement('li');
+            li.setAttribute('role', 'option');
+            li.setAttribute('data-lang', code);
+            li.textContent = shortLabel + ' · ' + fullName;
+            li.style.cssText = 'padding:8px 10px;border-radius:5px;cursor:pointer;font-size:14px;white-space:nowrap;';
+            li.addEventListener('mouseenter', function () { li.style.background = '#f0f1ec'; });
+            li.addEventListener('mouseleave', function () { li.style.background = ''; });
+            li.addEventListener('click', function () {
+              apply(code);
+              closeList();
+              btn.focus();
+            });
+            list.appendChild(li);
+            optionEls.push(li);
+          })(LANGS[j][0], LANGS[j][1], LANGS[j][2]);
+        }
+
+        function closeList() {
+          list.hidden = true;
+          btn.setAttribute('aria-expanded', 'false');
+          document.removeEventListener('click', onDocClick);
+          document.removeEventListener('keydown', onKeyDown);
+        }
+        function openList() {
+          list.hidden = false;
+          btn.setAttribute('aria-expanded', 'true');
+          document.addEventListener('click', onDocClick);
+          document.addEventListener('keydown', onKeyDown);
+        }
+        function onDocClick(e) { if (!host.contains(e.target)) closeList(); }
+        function onKeyDown(e) { if (e.key === 'Escape') { closeList(); btn.focus(); } }
+
+        btn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          if (list.hidden) openList(); else closeList();
+        });
+
+        host.appendChild(btn);
+        host.appendChild(list);
+
+        host.__daiLangUpdate = function (lang) {
+          var entry = null;
+          for (var k = 0; k < LANGS.length; k++) { if (LANGS[k][0] === lang) { entry = LANGS[k]; break; } }
+          codeEl.textContent = entry ? entry[1] : String(lang || '').toUpperCase();
+          for (var m = 0; m < optionEls.length; m++) {
+            var isSel = optionEls[m].getAttribute('data-lang') === lang;
+            optionEls[m].setAttribute('aria-selected', isSel ? 'true' : 'false');
+            optionEls[m].style.fontWeight = isSel ? '600' : '400';
+          }
+        };
+        host.__daiLangUpdate(current);
+      })(hosts[h]);
     }
   }
 

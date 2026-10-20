@@ -1,0 +1,400 @@
+/* Scene layer for index, dai, and wallet.
+   Image URLs are relative to this file, so both / and /wallet/ resolve them. */
+
+.access-hero {
+  position: relative;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #0c100e;
+}
+.access-hero-photo {
+  position: absolute;
+  inset: -4%;
+  background: url("visuals/access-city.jpg") center 40% / cover no-repeat;
+  animation: ken 32s ease-in-out infinite alternate;
+}
+.access-hero-photo::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 50% 34%, rgba(22,163,74,0.20), transparent 52%),
+    linear-gradient(to bottom, rgba(6,10,8,0.28), transparent 28%);
+}
+.access-hero-scrim {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(to top,
+    rgba(8,14,12,0.92) 0%,
+    rgba(8,14,12,0.78) 20%,
+    rgba(8,14,12,0.38) 40%,
+    rgba(8,14,12,0) 64%);
+}
+.access-hero-copy {
+  position: relative;
+  z-index: 2;
+  text-align: center;
+  max-width: 1100px;
+  padding: 0 1.25rem;
+  color: #f5f6f2;
+  text-shadow: 0 2px 28px rgba(0,0,0,0.55);
+}
+.access-hero-copy .neon {
+  text-shadow: 0 0 28px rgba(22,163,74,0.45), 0 2px 18px rgba(0,0,0,0.55);
+}
+@keyframes ken {
+  from { transform: scale(1); }
+  to { transform: scale(1.07); }
+}
+
+/* "Run what your product needs" — one full-bleed scene per capability. */
+.build-scene {
+  position: relative;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #0c100e;
+}
+.build-scene-photo {
+  position: absolute;
+  inset: -4%;
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  animation: ken 36s ease-in-out infinite alternate;
+}
+.build-scene-photo::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 50% 34%, rgba(22,163,74,0.18), transparent 52%),
+    linear-gradient(to bottom, rgba(6,10,8,0.3), transparent 30%);
+}
+.build-scene-scrim {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(to top,
+    rgba(8,14,12,0.88) 0%,
+    rgba(8,14,12,0.66) 24%,
+    rgba(8,14,12,0.26) 46%,
+    rgba(8,14,12,0) 70%);
+}
+.build-scene-copy {
+  position: relative;
+  z-index: 2;
+  text-align: center;
+  max-width: 760px;
+  padding: 0 1.25rem;
+  color: #f5f6f2;
+  text-shadow: 0 2px 28px rgba(0,0,0,0.55);
+}
+.build-scene-copy .muted { color: #c7ccc4; }
+.build-scene-copy .neon { text-shadow: 0 0 28px rgba(22,163,74,0.45), 0 2px 18px rgba(0,0,0,0.55); }
+
+.build-models { background-image: url("visuals/build-models.jpg"); }
+.build-skills { background-image: url("visuals/build-skills.jpg"); background-position: center 38%; }
+.build-api { background-image: url("visuals/build-api.jpg"); background-position: center 60%; }
+.build-pay { background-image: url("visuals/build-pay.jpg"); }
+
+.place-band {
+  display: grid;
+  grid-template-columns: 1fr;
+  background: #0c100e;
+}
+.place {
+  min-height: 230px;
+  background-position: center;
+  background-size: cover;
+}
+@media (min-width: 900px) {
+  .place-band { grid-template-columns: 1.15fr 1fr 0.92fr; }
+  .place { height: 56vh; min-height: 380px; }
+}
+.shot-desk { background-image: url("visuals/life-desk.jpg"); }
+.shot-rig { background-image: url("visuals/life-rig.jpg"); background-position: center 70%; }
+.shot-phone { background-image: url("visuals/life-phone.jpg"); background-position: center 62%; }
+
+.life-still {
+  height: 210px;
+  background-size: cover;
+  background-position: center;
+}
+@media (min-width: 768px) {
+  .life-still { height: 250px; }
+}
+
+/* Physical DAI coin */
+.mint {
+  width: min(220px, 58vw);
+  height: min(220px, 58vw);
+  margin: 0 auto 1.25rem;
+  perspective: 1000px;
+}
+@media (min-width: 768px) {
+  .mint { width: 280px; height: 280px; margin-bottom: 1.75rem; }
+}
+.mint-spin {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  transform-style: preserve-3d;
+  animation: mint-yaw 6.5s ease-in-out infinite;
+}
+.mint-slab {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: linear-gradient(90deg, #0c0c0c, #3d3d3d 16%, #16a34a 50%, #3d3d3d 84%, #0c0c0c);
+  transform: translateZ(-16px) scale(0.985);
+}
+.mint-face {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  transform: translateZ(16px);
+  background: radial-gradient(circle at 32% 26%, #ffffff 0%, #eef3ea 48%, #d5e0d2 100%);
+  box-shadow:
+    inset 0 0 0 12px #141414,
+    inset 0 0 0 16px #16a34a,
+    inset 0 0 0 20px #141414,
+    0 16px 30px rgba(0,0,0,0.12);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.mint-face img { width: 34%; height: auto; }
+.mint-word {
+  font-family: Iceland, sans-serif;
+  font-size: 34px;
+  letter-spacing: 0.22em;
+  color: #171717;
+  line-height: 1;
+  margin-top: 2px;
+  padding-left: 0.22em;
+}
+.mint-face::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(115deg, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0) 34%, rgba(255,255,255,0) 60%, rgba(255,255,255,0.28) 100%);
+  pointer-events: none;
+}
+@keyframes mint-yaw {
+  0%, 100% { transform: rotateY(-26deg) rotateX(12deg) translateY(0); }
+  50% { transform: rotateY(24deg) rotateX(18deg) translateY(-16px); }
+}
+.mint-sm {
+  width: 92px !important;
+  height: 92px !important;
+  margin: 0 auto 0.75rem !important;
+}
+.mint-sm .mint-face {
+  box-shadow:
+    inset 0 0 0 5px #141414,
+    inset 0 0 0 7px #16a34a,
+    inset 0 0 0 9px #141414;
+}
+.mint-sm .mint-word { font-size: 16px; }
+.mint-sm .mint-slab { transform: translateZ(-8px) scale(0.985); }
+.mint-sm .mint-face { transform: translateZ(8px); }
+
+.coin-hero {
+  background:
+    radial-gradient(ellipse at 50% 36%, rgba(22,163,74,0.14), transparent 46%),
+    radial-gradient(ellipse at 50% 100%, rgba(12,16,14,0.08), transparent 42%),
+    #f5f6f2;
+}
+.coin-hero #coin-mesh { opacity: 0.4; }
+.section-alt {
+  background-image: radial-gradient(ellipse at 50% -20%, rgba(22,163,74,0.09), transparent 52%);
+}
+.glass {
+  box-shadow: inset 0 1px 0 rgba(22,163,74,0.16);
+}
+
+.live-pip {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #16a34a;
+  box-shadow: 0 0 0 0 rgba(22,163,74,0.55);
+  animation: pip 1.8s ease-out infinite;
+  display: inline-block;
+  flex: none;
+}
+@keyframes pip {
+  70% { box-shadow: 0 0 0 10px rgba(22,163,74,0); }
+  100% { box-shadow: 0 0 0 0 rgba(22,163,74,0); }
+}
+
+.flow-track { display: none; }
+@media (min-width: 768px) {
+  .flow-track {
+    display: block;
+    position: relative;
+    height: 18px;
+    margin: -1.5rem auto 2.25rem;
+    max-width: 72%;
+  }
+  .flow-track::before {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; top: 8px;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, #16a34a, transparent);
+  }
+  .flow-track span {
+    position: absolute;
+    top: 2px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #16a34a;
+    box-shadow: 0 0 0 6px rgba(22,163,74,0.16);
+    animation: flow-run 3.6s linear infinite;
+  }
+}
+@keyframes flow-run {
+  from { left: 0; }
+  to { left: calc(100% - 14px); }
+}
+
+.tape {
+  background: #fff;
+  border: 1px solid #e4e6e0;
+  border-radius: 14px;
+  padding: 1.25rem 1rem 0.75rem;
+  box-shadow: 0 24px 50px rgba(23,23,23,0.05);
+}
+.stat-tile { box-shadow: inset 3px 0 0 #16a34a; }
+
+.night-close {
+  position: relative;
+  background: #0e1418 url("visuals/life-night.jpg") center 40% / cover no-repeat;
+}
+.night-close::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+.night-close > * { position: relative; z-index: 1; }
+
+.glass:hover .ico { filter: drop-shadow(0 0 6px rgba(22,163,74,0.45)); }
+
+/* Wallet, in the room */
+.device-stage {
+  position: relative;
+  padding: 54px 18px 28px;
+  border-radius: 40px;
+  background:
+    radial-gradient(ellipse at 50% 118%, rgba(22,163,74,0.42), transparent 52%),
+    linear-gradient(180deg, #1a1f1c 0%, #0e1210 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.08),
+    0 30px 70px rgba(0,0,0,0.28);
+}
+.device-stage::after {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  left: 50%;
+  bottom: 18px;
+  width: 48%;
+  height: 16px;
+  transform: translateX(-50%);
+  background: radial-gradient(ellipse, rgba(0,0,0,0.32), transparent 70%);
+  filter: blur(1px);
+}
+.phone-glow {
+  filter: drop-shadow(0 26px 18px rgba(23,23,23,0.18)) drop-shadow(0 0 36px rgba(22,163,74,0.14));
+  animation: phone-float 6.5s ease-in-out infinite;
+}
+@keyframes phone-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-12px); }
+}
+.reward-toast {
+  position: absolute;
+  z-index: 3;
+  top: 10px;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fff;
+  color: #171717;
+  border: 1px solid #e4e6e0;
+  border-radius: 999px;
+  padding: 6px 12px 6px 10px;
+  font-family: Iceland, sans-serif;
+  font-size: 22px;
+  line-height: 1;
+  box-shadow: 0 12px 28px rgba(0,0,0,0.08);
+  animation: toast-in 4.8s ease-in-out infinite;
+}
+@keyframes toast-in {
+  0%, 10% { opacity: 0; transform: translateY(8px); }
+  22%, 74% { opacity: 1; transform: none; }
+  90%, 100% { opacity: 0; transform: translateY(-8px); }
+}
+.pocket-band {
+  height: min(64vh, 680px);
+  min-height: 260px;
+  background: url("visuals/life-phone.jpg") center 58% / cover no-repeat;
+}
+.mesh-live { max-width: 720px; margin: 0 auto 2.5rem; }
+.mesh-svg { width: 100%; height: auto; display: block; }
+.mesh-line {
+  fill: none;
+  stroke: #16a34a;
+  stroke-width: 1.5;
+  stroke-dasharray: 4 7;
+  opacity: 0.7;
+}
+.mesh-node { fill: #fff; stroke: #171717; stroke-width: 2; }
+.mesh-hub { fill: #16a34a; stroke: #171717; stroke-width: 2; }
+
+.download-stage { position: relative; }
+.download-stage::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, #f5f6f2 0%, #f5f6f2 40%, rgba(245,246,242,0.72) 58%, rgba(245,246,242,0.12) 100%),
+    url("visuals/life-rig.jpg") right center / auto 100% no-repeat;
+  pointer-events: none;
+}
+@media (max-width: 800px) {
+  .download-stage::before {
+    background:
+      linear-gradient(to top, rgba(245,246,242,0.2), rgba(245,246,242,0.82)),
+      url("visuals/life-rig.jpg") center 30% / cover no-repeat;
+    opacity: 0.55;
+  }
+}
+.download-stage > * { position: relative; z-index: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .access-hero-photo,
+  .build-scene-photo,
+  .mint-spin,
+  .phone-glow,
+  .flow-track span,
+  .reward-toast,
+  .live-pip { animation: none !important; }
+  .reward-toast { opacity: 1; transform: none; }
+}
