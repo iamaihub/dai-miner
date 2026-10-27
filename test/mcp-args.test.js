@@ -77,6 +77,20 @@ describe('buildMcpArgs', () => {
     expect(buildMcpArgs({ argKeys: [] }, 'hacker news')).toEqual({});
   });
 
+  it('extracts owner/repo from a full github.com URL instead of "github.com/<owner>"', () => {
+    // Regression: "can you read this repo? https://github.com/SICIndex/contracts"
+    // used to shape repo as "github.com/SICIndex" (treating the host as the
+    // owner), so the GitHub API call 404'd on a repo that actually exists.
+    expect(buildMcpArgs({ argKeys: ['repo'] }, 'can you read this repo? https://github.com/SICIndex/contracts'))
+      .toEqual({ repo: 'SICIndex/contracts' });
+    expect(buildMcpArgs({ argKeys: ['owner'] }, 'https://github.com/facebook/react'))
+      .toEqual({ owner: 'facebook' });
+    expect(buildMcpArgs({ argKeys: ['repo'] }, 'http://github.com/torvalds/linux.git'))
+      .toEqual({ repo: 'torvalds/linux' });
+    expect(buildMcpArgs({ argKeys: ['repo'] }, 'github.com/SICIndex/contracts/tree/main/src'))
+      .toEqual({ repo: 'SICIndex/contracts' });
+  });
+
   it('does not keep a sentence the model put on repoName', () => {
     expect(resolveTaskArgs({
       arguments: { query: 'tell me about iamai.kg' },
