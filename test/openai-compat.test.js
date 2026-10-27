@@ -8,8 +8,13 @@ let nextTokens = ['Hel', 'lo', ' wor', 'ld'];
 const calls = [];
 const qvac = {
   ENABLED: true,
-  listModels: async () => [{ name: 'qwen3-1.7b', label: 'Qwen3 1.7B', loaded: true, installed: true }],
+  listModels: async () => [
+    { name: 'qwen3-1.7b', label: 'Qwen3 1.7B', type: 'llm', loaded: true, installed: true },
+    { name: 'embeddinggemma-300m', label: 'EmbeddingGemma 300M', type: 'llamacpp-embedding', loaded: false, installed: true },
+  ],
   isInstalled: async () => true,
+  estimatePromptTokens: (history) => (history || []).reduce((n, m) => n + Math.ceil(((m?.content?.length || 0) + 4) / 4), 0),
+  embed: async (text) => text ? [0.1, 0.2, 0.3] : null,
   chat: async (messages, opts) => {
     calls.push({ messages, opts });
     let text = '';
@@ -83,10 +88,63 @@ describe('routing', () => {
     expect(r.status).toBe(405);
     expect(r.headers.get('allow')).toBe('POST');
   });
-  it('answers embeddings with a 501 envelope', async () => {
-    const r = await post('/embeddings', { input: 'x' });
-    expect(r.status).toBe(501);
-    expect((await r.json()).error.code).toBe('not_implemented');
+});
+
+describe('POST /embeddings', () => {
+  it('embeds a single string for a local caller', async () => {
+    const r = await post('/embeddings', { input: 'hello' });
+    expect(r.status).toBe(200);
+    const j = await r.json();
+    expect(j).toMatchObject({ object: 'list', model: 'embeddinggemma-300m' });
+    expect(j.data).toEqual([{ object: 'embedding', index: 0, embedding: [0.1, 0.2, 0.3] }]);
+    expect(j.usage.prompt_tokens).toBeGreaterThan(0);
+    expect(j.usage.total_tokens).toBe(j.usage.prompt_tokens);
+  });
+
+  it('embeds a batch, preserving index order', async () => {
+    const r = await post('/embeddings', { input: ['a', 'b', 'c'] });
+    const j = await r.json();
+    expect(j.data.map(d => d.index)).toEqual([0, 1, 2]);
+  });
+
+  it('accepts an explicit embedding model id', async () => {
+    const r = await post('/embeddings', { input: 'x', model: 'embeddinggemma-300m' });
+    expect(r.status).toBe(200);
+  });
+
+  it('400s an explicit chat-model id (wrong type for this endpoint)', async () => {
+    const r = await post('/embeddings', { input: 'x', model: 'qwen3-1.7b' });
+    expect(r.status).toBe(400);
+    expect((await r.json()).error.code).toBe('wrong_model_type');
+  });
+
+  it('404s an unknown model id', async () => {
+    const r = await post('/embeddings', { input: 'x', model: 'nope' });
+    expect(r.status).toBe(404);
+    expect((await r.json()).error.code).toBe('model_not_found');
+  });
+
+  it('400s empty/missing input', async () => {
+    expect((await post('/embeddings', {})).status).toBe(400);
+    expect((await post('/embeddings', { input: '' })).status).toBe(400);
+    expect((await post('/embeddings', { input: [] })).status).toBe(400);
+  });
+
+  it('400s an unsupported encoding_format', async () => {
+    const r = await post('/embeddings', { input: 'x', encoding_format: 'base64' });
+    expect(r.status).toBe(400);
+    expect((await r.json()).error.code).toBe('unsupported_parameter');
+  });
+
+  it('402s a paid/remote caller — no billing model for embeddings yet', async () => {
+    const r = await post('/embeddings', { input: 'x' }, remote);
+    expect(r.status).toBe(402);
+    expect((await r.json()).error.code).toBe('embeddings_billing_not_supported');
+  });
+
+  it('lets a remote caller in free with the configured Bearer llmApiKey', async () => {
+    const r = await post('/embeddings', { input: 'x' }, { ...remote, authorization: 'Bearer sekret-key' });
+    expect(r.status).toBe(200);
   });
 });
 

@@ -1110,7 +1110,10 @@ async function loadSettingsPanel() {
       const res = await fetch(`http://localhost:${port}/api/models`);
       if (res.ok) {
         const data = await res.json();
+        // Only completion models belong in the mining-model picker — embedding/
+        // decision entries (type !== 'llm') aren't valid chat models.
         const entries = (data.models || [])
+          .filter(m => (m.type || 'llm') === 'llm')
           .map(m => ({ name: m.name || m.model, installed: !!m.installed }))
           .filter(e => e.name);
         if (entries.length) {
@@ -2202,7 +2205,9 @@ async function _renderModelList() {
       const byName = new Map();
       if (localRes?.ok) {
         const data = await localRes.json();
+        // Chat-model picker — embedding/decision entries aren't valid picks here.
         for (const m of (data.models || [])) {
+          if ((m.type || 'llm') !== 'llm') continue;
           const name = m.name || m.model;
           if (name) byName.set(name, { name, local: true, peerCount: 0 });
         }
@@ -2282,7 +2287,9 @@ async function loadChatModels(force = false) {
     const byName = new Map();
     if (localRes?.ok) {
       const data = await localRes.json();
+      // Chat-model picker — embedding/decision entries aren't valid picks here.
       for (const m of (data.models || [])) {
+        if ((m.type || 'llm') !== 'llm') continue;
         const name = m.name || m.model;
         // `installed` may be absent on older nodes → treat as installed so we
         // don't hide everything when talking to a node that predates the flag.

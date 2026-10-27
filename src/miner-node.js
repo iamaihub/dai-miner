@@ -9116,7 +9116,7 @@ export class DAIMinerNode {
    * work delivered — same as a job timeout). Returns { text, usage, fee, gasPrice }
    * on success, or { status, code, error } on any rejection.
    */
-  async _runPaidCompute({ jobId, requesterAddress, maxBudget, paymentTx, messages, model, systemPrompt, maxTokens, onToken }) {
+  async _runPaidCompute({ jobId, requesterAddress, maxBudget, paymentTx, messages, model, systemPrompt, maxTokens, onToken, jsonMode, jsonSchema }) {
     const qvac = await getQvacModels();
     if (!qvac || !qvac.ENABLED) return { status: 503, code: 'QVAC_UNAVAILABLE', error: 'Inference backend (QVAC) is unavailable' };
     if (!jobId)            return { status: 400, code: 'JOBID_REQUIRED',     error: 'a client-generated jobId (the value signed by paymentTx) is required' };
@@ -9157,7 +9157,11 @@ export class DAIMinerNode {
     const hardCap = outputTokenCap(maxBudget, gasPrice, promptEst);
     // maxTokens/onToken are optional (the OpenAI-compat API's max_tokens and SSE
     // streaming); omitted, this is exactly the previous call.
-    const usage = await qvac.chat(messages, { model, timeLimit: 90_000, systemPrompt, withUsage: true, hardTokenCap: hardCap, ...(maxTokens ? { maxTokens } : {}), ...(onToken ? { onToken } : {}) });
+    const usage = await qvac.chat(messages, {
+      model, timeLimit: 90_000, systemPrompt, withUsage: true, hardTokenCap: hardCap,
+      ...(maxTokens ? { maxTokens } : {}), ...(onToken ? { onToken } : {}),
+      ...(jsonMode ? { jsonMode } : {}), ...(jsonSchema ? { jsonSchema } : {}),
+    });
     if (usage == null || usage.text == null) {
       const { reservation, refund } = timeoutFee(maxBudget);
       const timeout = { type: 'job-timeout', jobId, requesterAddress, minerAddress: this.config.wallet, reservationFee: reservation, refund, completedAt: Date.now() };

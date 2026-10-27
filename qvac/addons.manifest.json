@@ -1,8 +1,9 @@
 {
   "version": 1,
-  "bundleId": "4099b2844bcac5d71c57f1d3fba498f510baae6c59c81fdf10b0448c21313b50",
+  "bundleId": "5dae98e54be6e3ff5a9d48fa9cc83c8b31214ab6a8e17a6f4352c092b9e7bfa1",
   "addons": [
-    "@qvac/fabric",
+    "@qvac/embed-llamacpp",
+    "@qvac/fabric-linux-x64",
     "@qvac/llm-llamacpp",
     "bare-abort",
     "bare-buffer",

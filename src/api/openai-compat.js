@@ -10,7 +10,7 @@
  *   GET  /openai/v1/models/{id}       retrieve
  *   POST /openai/v1/chat/completions  chat (JSON or SSE with stream:true)
  *   POST /openai/v1/completions       legacy prompt completion
- *   POST /openai/v1/embeddings        501 (no embedding backend), OpenAI-shaped
+ *   POST /openai/v1/embeddings        local/API-key callers only — see note below
  *
  * Access mirrors /v1: a local caller is free; a remote caller pays with a signed
  * bid (body.dai or X-DAI-* headers, see Node._runPaidCompute) and is billed for
@@ -22,6 +22,13 @@
  * support, so those request fields are refused with a clear 400 rather than
  * accepted and ignored. Sampling knobs (temperature, top_p, seed, ...) are
  * accepted and have no effect.
+ *
+ * /embeddings runs on QVAC's llamacpp-embedding engine (a separate small
+ * resident model from the chat model — see qvac-models.js's per-type resident
+ * pool). There is no fee/escrow model for it yet (gas-estimator.js only prices
+ * chat tokens), so it's deliberately local/API-key-only for now — a paid,
+ * remote, unauthenticated caller gets a clear 402 rather than free compute or
+ * an invented price.
  */
 
 import crypto from 'crypto';
@@ -330,8 +337,11 @@ export function createOpenAIHandler(node, deps) {
       throw new ApiError(400, "'tool_choice' is not supported by this endpoint", { param: 'tool_choice', code: 'unsupported_parameter' });
     }
     const rf = payload.response_format;
-    if (rf != null && !['text', 'json_object'].includes(rf.type)) {
-      throw new ApiError(400, `response_format.type "${rf.type}" is not supported (use "text" or "json_object")`, { param: 'response_format', code: 'unsupported_parameter' });
+    if (rf != null && !['text', 'json_object', 'json_schema'].includes(rf.type)) {
+      throw new ApiError(400, `response_format.type "${rf.type}" is not supported (use "text", "json_object", or "json_schema")`, { param: 'response_format', code: 'unsupported_parameter' });
+    }
+    if (rf?.type === 'json_schema' && !rf.json_schema?.schema) {
+      throw new ApiError(400, 'response_format.json_schema.schema is required when type is "json_schema"', { param: 'response_format', code: 'unsupported_parameter' });
     }
   }
 
@@ -342,6 +352,11 @@ export function createOpenAIHandler(node, deps) {
    */
   async function generate({ res, payload, qvac, messages, model, access, stops, maxTokens, onText }) {
     const jsonMode = payload.response_format?.type === 'json_object';
+    // json_schema is grammar-constrained to the caller's exact shape — strictly
+    // stronger than json_object, so the two are mutually exclusive by construction.
+    const jsonSchema = payload.response_format?.type === 'json_schema'
+      ? payload.response_format.json_schema
+      : null;
     const stopFilter = makeStopStream(stops, (t) => onText && onText(t));
     const filter = makeThinkFilter((t) => stopFilter.push(t));
     let cancelled = false;
@@ -353,7 +368,7 @@ export function createOpenAIHandler(node, deps) {
     let fee = 0;
     if (access.free) {
       usage = await qvac.chat(messages, {
-        model, timeLimit: 90_000, withUsage: true, jsonMode,
+        model, timeLimit: 90_000, withUsage: true, jsonMode, jsonSchema,
         maxTokens: maxTokens || undefined,
         onToken, shouldStop: () => cancelled,
       });
@@ -362,6 +377,7 @@ export function createOpenAIHandler(node, deps) {
       const r = await node._runPaidCompute({
         jobId: access.jobId, requesterAddress: access.requesterAddress, maxBudget: access.maxBudget,
         paymentTx: access.paymentTx, messages, model, maxTokens: maxTokens || undefined, onToken,
+        jsonMode, jsonSchema,
       });
       if (r.error) {
         throw new ApiError(r.status || 402, r.error, { code: (r.code || 'payment_required').toLowerCase(), extra: { minFee: r.minFee, minTokens: r.minTokens } });
@@ -495,6 +511,60 @@ export function createOpenAIHandler(node, deps) {
     });
   }
 
+  const EMBEDDING_FALLBACK_MODEL = 'embeddinggemma-300m'; // keep in sync with qvac-models.js's embed() default
+
+  async function embeddings(req, res) {
+    const payload = await readJsonBody(req);
+    const access = resolveAccess(req, payload);
+    // No fee/escrow model for embeddings yet — see the file header note.
+    if (!access.free) {
+      throw new ApiError(402, 'Paid embeddings are not metered on this node yet — retry as a local or API-key-authenticated request', { code: 'embeddings_billing_not_supported' });
+    }
+
+    const raw = payload.input;
+    const items = Array.isArray(raw) ? raw : (raw != null ? [raw] : []);
+    if (!items.length || items.some((s) => typeof s !== 'string' || !s.length)) {
+      throw new ApiError(400, "'input' must be a non-empty string or array of non-empty strings", { param: 'input' });
+    }
+    if (payload.encoding_format != null && payload.encoding_format !== 'float') {
+      throw new ApiError(400, "'encoding_format' \"base64\" is not supported (only \"float\")", { param: 'encoding_format', code: 'unsupported_parameter' });
+    }
+
+    const qvac = await backend();
+    if (typeof qvac.embed !== 'function') {
+      throw new ApiError(501, 'Embeddings are not available on this node (no embedding backend)', { code: 'not_implemented' });
+    }
+    const requested = typeof payload.model === 'string' && payload.model.trim() ? payload.model.trim() : null;
+    if (requested) {
+      const known = await qvac.listModels();
+      const entry = known.find((m) => m.name === requested);
+      if (!entry) throw new ApiError(404, `The model '${requested}' does not exist on this node. GET ${OPENAI_PREFIX}/models lists the available ids.`, { param: 'model', code: 'model_not_found' });
+      if ((entry.type || 'llm') !== 'llamacpp-embedding') {
+        throw new ApiError(400, `Model '${requested}' is not an embedding model.`, { param: 'model', code: 'wrong_model_type' });
+      }
+      if (qvac.isInstalled && !(await qvac.isInstalled(requested))) {
+        throw new ApiError(503, `Model "${requested}" is not installed on this device.`, { code: 'model_not_installed', param: 'model' });
+      }
+    }
+
+    const data = [];
+    let promptTokens = 0;
+    for (let i = 0; i < items.length; i++) {
+      const text = items[i];
+      const embedding = await qvac.embed(text, requested ? { model: requested } : {});
+      if (embedding == null) throw new ApiError(503, 'Embedding generation produced no output', { code: 'no_output' });
+      data.push({ object: 'embedding', index: i, embedding });
+      promptTokens += qvac.estimatePromptTokens([{ content: text }]);
+    }
+
+    return sendJson(res, 200, {
+      object: 'list',
+      data,
+      model: requested || EMBEDDING_FALLBACK_MODEL,
+      usage: { prompt_tokens: promptTokens, total_tokens: promptTokens },
+    });
+  }
+
   async function listModels(res) {
     const qvac = await backend().catch((e) => { throw new ApiError(502, `QVAC unavailable: ${e.message}`); });
     const list = await qvac.listModels();
@@ -529,10 +599,8 @@ export function createOpenAIHandler(node, deps) {
       else if (sub.startsWith('/models/')) { need('GET'); await retrieveModel(res, decodeURIComponent(sub.slice('/models/'.length))); }
       else if (sub === '/chat/completions') { need('POST'); await chatCompletions(req, res); }
       else if (sub === '/completions') { need('POST'); await completions(req, res); }
-      else if (sub === '/embeddings') {
-        need('POST');
-        throw new ApiError(501, 'Embeddings are not available on this node (no embedding backend)', { code: 'not_implemented' });
-      } else {
+      else if (sub === '/embeddings') { need('POST'); await embeddings(req, res); }
+      else {
         throw new ApiError(404, `Unknown route ${req.method} ${p}`, { code: 'unknown_route' });
       }
     } catch (e) {

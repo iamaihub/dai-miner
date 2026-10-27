@@ -125,6 +125,42 @@ function extractJSON(text) {
   return null;
 }
 
+// ── JSON schema from a role call's required keys ──────────────────────────────
+// requiredKeys is either a flat array of key names (each defaults to `string`,
+// matching the old presence-only contract) or a map of key → JSON Schema type
+// fragment, for the handful of callers that know a key is really a number,
+// boolean, array, or nullable. Builds the grammar qvacModels.chat passes as
+// jsonSchema, so the engine itself can no longer emit a shape that's missing a
+// required key or wrong-typed — extractJSON's repair pass below becomes a
+// defensive fallback rather than the primary mechanism.
+function jsonSchemaForKeys(requiredKeys) {
+  const keys = keysOf(requiredKeys);
+  const isMap = requiredKeys && !Array.isArray(requiredKeys) && typeof requiredKeys === 'object';
+  const properties = {};
+  for (const k of keys) properties[k] = isMap ? requiredKeys[k] : { type: 'string' };
+  return {
+    name: 'brain_response',
+    schema: { type: 'object', properties, required: keys, additionalProperties: true },
+  };
+}
+
+function keysOf(requiredKeys) {
+  return Array.isArray(requiredKeys) ? requiredKeys : Object.keys(requiredKeys || {});
+}
+
+// Shared shape for both the fast and heavy evaluator passes in analyzeHumanness.
+const VERDICT_SCHEMA_KEYS = {
+  verdict:    { type: 'string', enum: ['HUMAN', 'AI', 'UNCERTAIN'] },
+  confidence: { type: 'number' },
+  reasoning:  { type: 'string' },
+};
+
+// Shared shape for validateDescription/validateFeedback's accept/reject check.
+const VALID_REASON_SCHEMA_KEYS = {
+  valid:  { type: 'boolean' },
+  reason: { type: 'string' },
+};
+
 // ── QVAC chat (single-prompt, delegates to the shared model manager) ──────────
 // Returns model text, or null when QVAC is disabled/unavailable so JSON helpers
 // and the analyze/vote heuristics can degrade gracefully.
@@ -135,6 +171,7 @@ async function qvacChat(prompt, opts = {}) {
     maxTokens:    opts.maxTokens,
     timeLimit:    opts.timeLimit,
     jsonMode:     opts.jsonMode,
+    jsonSchema:   opts.jsonSchema,
     systemPrompt: opts.systemPrompt,
   });
 }
@@ -146,14 +183,19 @@ async function evaluatorChat(prompt, opts = {}) {
 }
 
 async function evaluatorChatJSON(prompt, requiredKeys, opts = {}) {
-  const raw = await evaluatorChat(prompt, { ...opts, jsonMode: true });
+  const schema = jsonSchemaForKeys(requiredKeys);
+  const keys = keysOf(requiredKeys);
+  const raw = await evaluatorChat(prompt, { ...opts, jsonSchema: schema });
   let parsed = extractJSON(raw);
 
-  if (!parsed || requiredKeys.some(k => !(k in parsed))) {
+  // The grammar already forces valid JSON with every required key present, so
+  // this should rarely fire now — kept as cheap insurance against a model that
+  // degenerates mid-stream and gets cut off before closing the object.
+  if (!parsed || keys.some(k => !(k in parsed))) {
     console.warn('[brain] Evaluator invalid JSON, retrying... raw:', (raw || '').slice(0, 200));
     const retry = await evaluatorChat(
-      `Output ONLY a JSON object with fields ${requiredKeys.join(', ')}. Schema: {"verdict":"HUMAN|AI|UNCERTAIN","confidence":<float 0.0-1.0>,"reasoning":"<brief>"}\n\nNow output JSON for this task:\n${prompt}`,
-      { ...opts, jsonMode: false }
+      `Output ONLY a JSON object with fields ${keys.join(', ')}.\n\nNow output JSON for this task:\n${prompt}`,
+      { ...opts, jsonSchema: schema }
     );
     console.warn('[brain] Retry raw:', (retry || '').slice(0, 200));
     parsed = extractJSON(retry);
@@ -167,12 +209,14 @@ async function learnerChat(prompt, opts = {}) {
 }
 
 async function learnerChatJSON(prompt, requiredKeys, opts = {}) {
-  const raw = await learnerChat(prompt, { ...opts, jsonMode: true });
+  const schema = jsonSchemaForKeys(requiredKeys);
+  const keys = keysOf(requiredKeys);
+  const raw = await learnerChat(prompt, { ...opts, jsonSchema: schema });
   let parsed = extractJSON(raw);
-  if (!parsed || requiredKeys.some(k => !(k in parsed))) {
+  if (!parsed || keys.some(k => !(k in parsed))) {
     const retry = await learnerChat(
-      `${prompt}\n\nIMPORTANT: Respond with ONLY a valid JSON object. Required fields: ${requiredKeys.join(', ')}. No other text.`,
-      { ...opts, jsonMode: true }
+      `${prompt}\n\nRequired fields: ${keys.join(', ')}.`,
+      { ...opts, jsonSchema: schema }
     );
     parsed = extractJSON(retry);
   }
@@ -282,7 +326,7 @@ Return exactly this JSON (no extra text):
   // Step 1: Fast model
   let result = await evaluatorChatJSON(
     basePrompt,
-    ['verdict', 'confidence', 'reasoning'],
+    VERDICT_SCHEMA_KEYS,
     { model: EVALUATOR_FAST_MODEL, maxTokens: 220, timeLimit: 120000 }
   );
 
@@ -296,7 +340,7 @@ Return exactly this JSON (no extra text):
     console.log(`[brain] Escalating to HEAVY model for ${address} (confidence=${fastConfidence}, negative=${hasNegative})`);
     const heavyResult = await evaluatorChatJSON(
       basePrompt + '\n\nYou are the HEAVY reasoning model. Think carefully and be precise with confidence.',
-      ['verdict', 'confidence', 'reasoning'],
+      VERDICT_SCHEMA_KEYS,
       { model: EVALUATOR_HEAVY_MODEL, maxTokens: 280, timeLimit: 180000 }
     );
     if (heavyResult) {
@@ -358,7 +402,7 @@ Reply with ONLY this JSON (new_weight must be within 0.05 of current weight ${cu
 
   const result = await learnerChatJSON(
     prompt,
-    ['new_weight'],
+    { new_weight: { type: 'number' } },
     { maxTokens: 60, timeLimit: 20000 }
   );
 
@@ -411,7 +455,7 @@ OUTPUT (STRICT JSON):
 
   const result = await evaluatorChatJSON(
     prompt,
-    ['useful', 'assessment'],
+    { useful: { type: 'boolean' }, assessment: { type: 'string' } },
     { maxTokens: 250, timeLimit: 30000 }
   );
 
@@ -535,7 +579,7 @@ or
 
   const result = await evaluatorChatJSON(
     prompt,
-    ['valid', 'reason'],
+    VALID_REASON_SCHEMA_KEYS,
     { maxTokens: 80, timeLimit: 20000 }
   );
   return result || { valid: false, reason: 'Validation unavailable — try again shortly' };
@@ -558,7 +602,7 @@ or
 
   const result = await evaluatorChatJSON(
     prompt,
-    ['valid', 'reason'],
+    VALID_REASON_SCHEMA_KEYS,
     { maxTokens: 80, timeLimit: 20000 }
   );
   return result || { valid: true, reason: 'Validation unavailable — skipped' };
@@ -766,7 +810,11 @@ Provide a brief, insightful vibe analysis. Focus on:
 Return ONLY valid JSON, no extra text:
 {"vibe":"<2-3 sentence personality and interest summary>","topics":["<topic1>","<topic2>","<topic3>"],"humanSignals":["<signal1>","<signal2>"]}`;
 
-  const result = await learnerChatJSON(prompt, ['vibe', 'topics', 'humanSignals'], {
+  const result = await learnerChatJSON(prompt, {
+    vibe:         { type: 'string' },
+    topics:       { type: 'array', items: { type: 'string' } },
+    humanSignals: { type: 'array', items: { type: 'string' } },
+  }, {
     maxTokens: 180,
     timeLimit: 30000,
   });
@@ -812,7 +860,8 @@ If no skill applies (general conversation), respond with:
 
 Output ONLY valid JSON.`;
 
-  const result = await evaluatorChatJSON(prompt, ['skillId'], { maxTokens: 120, timeLimit: 15000 });
+  // skillId is nullable — "no skill applies" is a legitimate reply, not a failure.
+  const result = await evaluatorChatJSON(prompt, { skillId: { type: ['string', 'null'] } }, { maxTokens: 120, timeLimit: 15000 });
   return result || { skillId: null, reason: 'Routing failed' };
 }
 
@@ -827,4 +876,4 @@ Be direct. Name specific values. End with a one-sentence signal assessment.`;
   return reply || 'No interpretation available.';
 }
 
-module.exports = { analyzeHumanness, vibeCheck, onNewMethod, onVote, onVerdictFeedback, onChatFeedback, recentFeedbackGuidance, consolidate, getWeights, validateDescription, validateFeedback, loadSkillContexts, routeMessage, interpretSkillResult };
+module.exports = { analyzeHumanness, vibeCheck, onNewMethod, onVote, onVerdictFeedback, onChatFeedback, recentFeedbackGuidance, consolidate, getWeights, validateDescription, validateFeedback, loadSkillContexts, routeMessage, interpretSkillResult, jsonSchemaForKeys, extractJSON };

@@ -22,6 +22,22 @@ const MAX_RESIDENT  = Math.max(1, parseInt(process.env.QVAC_MAX_RESIDENT || '2',
 const CTX_SIZE      = parseInt(process.env.QVAC_CTX_SIZE || '8192', 10);
 const ENABLED       = process.env.QVAC_DISABLED !== '1';
 
+// Per-engine resident caps. Every loaded model used to compete for the same
+// MAX_RESIDENT slots regardless of what it actually was, so a resident chat
+// LLM and a resident embedding model would evict each other on a 2-slot pool.
+// Embedding/decision models are tiny (300-450M) and nearly always wanted
+// alongside a chat model, not instead of one, so they get their own small
+// pools by default. Keyed by the SDK's canonical modelType string (see
+// @qvac/inference's ModelType enum); 'llm' covers llamacpp-completion.
+const RESIDENT_CAPS = {
+  'llm':                Math.max(1, MAX_RESIDENT),
+  'llamacpp-embedding': Math.max(1, parseInt(process.env.QVAC_MAX_RESIDENT_EMBEDDING || '1', 10)),
+  'llamacpp-decision':  Math.max(1, parseInt(process.env.QVAC_MAX_RESIDENT_DECISION || '1', 10)),
+};
+function residentCapFor(type) {
+  return RESIDENT_CAPS[type] ?? 1;
+}
+
 // RPC cluster pooling (QVAC SDK 0.21+, "clustered inference over RPC" on
 // llama.cpp's RPC backend) — split one model's layers across several of a
 // person's OWN devices so a model too big for any single one of them can
@@ -60,6 +76,9 @@ const ALIASES = {
   'qwen3.5-2b-mm': 'QWEN3_5_2B_MULTIMODAL_Q4_K_M',
   'qwen3.5-4b-mm': 'QWEN3_5_4B_MULTIMODAL_Q4_K_M',
   'gemma4-2b-mm':  'GEMMA4_2B_MULTIMODAL_Q4_K_M',
+  // Non-completion engines (llamacpp-embedding / llamacpp-decision plugins)
+  'embeddinggemma-300m': 'EMBEDDINGGEMMA_300M_Q8_0',
+  'laya-decision-322m':  'LAYA_MULTILINGUAL_322M_Q8_0',
   // legacy Ollama names → default so old configs keep working
   'qwen2.5:1.5b': DEFAULT_MODEL,
   'qwen2.5':      DEFAULT_MODEL,
@@ -87,7 +106,21 @@ const BUILTIN_MODELS = [
   { name: 'qwen3-27b',     label: 'Qwen3.6 27B',               constant: 'QWEN3_6_27B_MULTIMODAL_Q4_K_XL' },
   { name: 'qwen3-35b',     label: 'Qwen3.6 35B-A3B (MoE)',     constant: 'QWEN3_6_35B_A3B_MULTIMODAL_Q4_K_M' },
   { name: 'gpt-oss-120b',  label: 'GPT-OSS 120B',              constant: 'GPT_OSS_120B_INST_Q4_K_M_SHARD' },
+  // Non-completion engines — type picks the SDK's modelType and resident pool
+  // (see RESIDENT_CAPS); omitted type defaults to 'llm' (llamacpp-completion).
+  { name: 'embeddinggemma-300m', label: 'EmbeddingGemma 300M (embeddings)', constant: 'EMBEDDINGGEMMA_300M_Q8_0', type: 'llamacpp-embedding' },
+  { name: 'laya-decision-322m',  label: 'LAYA 322M (decisions)',           constant: 'LAYA_MULTILINGUAL_322M_Q8_0', type: 'llamacpp-decision' },
 ];
+
+// constant → type, derived from BUILTIN_MODELS so there's one place to add a
+// new model instead of two. Anything not listed here (including raw custom
+// paths resolveModel() can also return) defaults to 'llm'.
+const CONSTANT_TYPE = Object.fromEntries(
+  BUILTIN_MODELS.filter(m => m.type).map(m => [m.constant, m.type])
+);
+function typeForConstant(name) {
+  return CONSTANT_TYPE[name] || 'llm';
+}
 
 // ── Singleton state ─────────────────────────────────────────────────────────
 let _sdk = null;
@@ -418,12 +451,16 @@ function resolveModel(sdk, requested) {
 }
 
 // ── Load-on-demand + LRU unload ─────────────────────────────────────────────
-async function evictIfNeeded(keepName) {
-  while (_loaded.size >= MAX_RESIDENT) {
-    // pick least-recently-used, excluding the model we're about to (re)use
+// Eviction is scoped to models of the SAME type as the one being loaded, so a
+// resident chat LLM is never evicted to make room for an embedding/decision
+// model and vice versa — each type has its own small pool (RESIDENT_CAPS).
+async function evictIfNeeded(keepName, keepType) {
+  const cap = residentCapFor(keepType);
+  while ([..._loaded.values()].filter(e => e.type === keepType).length >= cap) {
+    // pick least-recently-used of the SAME type, excluding the model we're about to (re)use
     let lruName = null, lruTime = Infinity;
     for (const [name, e] of _loaded) {
-      if (name === keepName) continue;
+      if (name === keepName || e.type !== keepType) continue;
       if (e.lastUsed < lruTime) { lruTime = e.lastUsed; lruName = name; }
     }
     if (!lruName) break;
@@ -432,7 +469,7 @@ async function evictIfNeeded(keepName) {
     try {
       const sdk = await getSdk();
       await sdk.unloadModel({ modelId: entry.modelId });
-      console.log(`[qvac] Unloaded LRU model ${lruName} to free memory`);
+      console.log(`[qvac] Unloaded LRU ${keepType} model ${lruName} to free memory`);
     } catch (e) {
       console.warn(`[qvac] Unload of ${lruName} failed: ${e.message}`);
     }
@@ -442,18 +479,24 @@ async function evictIfNeeded(keepName) {
 async function getModelId(requested) {
   const sdk = await getSdk();
   const { name, modelSrc, fallbackSrc } = resolveModel(sdk, requested);
+  const type = typeForConstant(name);
 
   const existing = _loaded.get(name);
   if (existing) { existing.lastUsed = Date.now(); return existing.modelId; }
 
   if (_loadPromises.has(name)) return _loadPromises.get(name);
 
+  // ctx_size/clustering are a completion-model concept (context window, RPC
+  // layer-splitting) — only apply them for 'llm'; other engines get just the
+  // bare essentials, matching the SDK's own non-completion examples.
   const loadOnce = async (src, label, clusterModelConfig) => {
     console.log(`[qvac] Loading model ${name}${label ? ` (${label})` : ''}...`);
     return sdk.loadModel({
       modelSrc: src,
-      modelType: 'llm',
-      modelConfig: { ctx_size: CTX_SIZE, verbosity: 0, ...(clusterModelConfig || {}) },
+      modelType: type,
+      modelConfig: type === 'llm'
+        ? { ctx_size: CTX_SIZE, verbosity: 0, ...(clusterModelConfig || {}) }
+        : { verbosity: 0 },
       onProgress: (pr) => {
         const pct = pr && pr.percentage;
         if (pct == null) return;
@@ -470,8 +513,10 @@ async function getModelId(requested) {
   // loading solo. A worker-only device (lending memory, not initiating loads
   // itself) and a device with no peers up both fall straight through to a
   // normal single-device load — clustering is never a hard dependency.
+  // Layer-splitting is a completion-model concept, so skip discovery entirely
+  // for the small embedding/decision engines.
   let clusterModelConfig = null;
-  if (!RPC_WORKER_ONLY && RPC_TOPIC) {
+  if (type === 'llm' && !RPC_WORKER_ONLY && RPC_TOPIC) {
     const peers = await discoverClusterPeers();
     if (peers.length >= RPC_MIN_PEERS) {
       try {
@@ -486,7 +531,7 @@ async function getModelId(requested) {
 
   const p = (async () => {
     _trackDownload(name, { state: 'downloading', pct: null, error: null, startedAt: Date.now(), finishedAt: null, requested });
-    await evictIfNeeded(name);
+    await evictIfNeeded(name, type);
     let modelId;
     try {
       modelId = await loadOnce(modelSrc, fallbackSrc ? 'local blob' : '', clusterModelConfig);
@@ -496,7 +541,7 @@ async function getModelId(requested) {
       console.warn(`[qvac] Local blob load failed (${err.message}) — retrying via registry`);
       modelId = await loadOnce(fallbackSrc, 'registry', clusterModelConfig);
     }
-    _loaded.set(name, { modelId, lastUsed: Date.now() });
+    _loaded.set(name, { modelId, lastUsed: Date.now(), type });
     _loadPromises.delete(name);
     _trackDownload(name, { state: 'ready', pct: 100, error: null, finishedAt: Date.now() });
     console.log(`[qvac] Model ready: ${name} (id=${modelId})`);
@@ -580,6 +625,8 @@ async function chat(messages, opts = {}) {
     maxTokens = 512,          // hard ceiling on OUTPUT tokens for this call
     timeLimit = 120000,
     jsonMode = false,
+    jsonSchema = null,        // { name, schema } — grammar-constrained to this exact shape
+    responseFormat = null,    // full override: { type: 'text'|'json_object'|'json_schema', json_schema? }
     noThink = true,           // suppress chain-of-thought, where the model supports it
     systemPrompt,
     withUsage = false,        // when true, return { text, promptTokens, completionTokens, totalTokens }
@@ -587,6 +634,17 @@ async function chat(messages, opts = {}) {
     onToken = null,           // optional callback(token) for live streaming to a client
     shouldStop = null,        // optional () => bool, checked per token: true → cancel early
   } = opts;
+
+  // Grammar-constrained output (QVAC SDK 0.21+): the engine itself refuses to
+  // emit a token that would violate the format, so callers no longer need the
+  // "ask nicely + regex-repair the result" dance jsonMode used to require.
+  // jsonSchema pins the exact keys/types; jsonMode alone only guarantees *some*
+  // valid JSON (the SDK's own docs note a small model will often shortcut to
+  // `{}` under that weaker grammar — pass jsonSchema whenever the shape is
+  // known ahead of time).
+  const effectiveResponseFormat = responseFormat
+    || (jsonSchema ? { type: 'json_schema', json_schema: jsonSchema }
+      : (jsonMode ? { type: 'json_object' } : null));
 
   return enqueue(async () => {
     try {
@@ -635,7 +693,10 @@ async function chat(messages, opts = {}) {
       const caps = [maxTokens, hardTokenCap].filter(n => Number(n) > 0);
       const effectiveCap = caps.length ? Math.min(...caps) : 0;
 
-      const run = sdk.completion({ modelId, history, stream: true });
+      const run = sdk.completion({
+        modelId, history, stream: true,
+        ...(effectiveResponseFormat ? { responseFormat: effectiveResponseFormat } : {}),
+      });
       let text = '';
       let truncated = false;
       let completionTokens = 0;           // exact: one stream chunk == one output token
@@ -691,6 +752,65 @@ async function complete(prompt, opts = {}) {
   return chat([{ role: 'user', content: String(prompt) }], opts);
 }
 
+// ── Embeddings (llamacpp-embedding) ─────────────────────────────────────────
+// Returns a float embedding vector for `text`, or null when QVAC is disabled/
+// unavailable — same degrade-gracefully contract as chat(). model defaults to
+// the EmbeddingGemma pilot entry; pass a name from BUILTIN_MODELS to override.
+async function embed(text, opts = {}) {
+  if (!ENABLED) return null;
+  if (circuitOpen()) return null;
+  const { model = 'embeddinggemma-300m', timeLimit = 60000 } = opts;
+  return enqueue(async () => {
+    try {
+      const modelId = await Promise.race([
+        getModelId(model),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('QVAC model load timeout')), timeLimit)),
+      ]);
+      const sdk = await getSdk();
+      const { embedding } = await sdk.embed({ modelId, text: String(text) });
+      _failures = 0;
+      _backendFault = null;
+      return embedding;
+    } catch (err) {
+      noteBackendError(err);
+      _failures++;
+      if (_failures >= CIRCUIT_OPEN_AFTER) _circuitOpenAt = Date.now();
+      console.error('[qvac] embed failed:', err.message);
+      return null;
+    }
+  });
+}
+
+// ── Decisions (llamacpp-decision) ───────────────────────────────────────────
+// `state` is the free-text situation to judge; `questions` maps a field name to
+// { type: 'choice'|'score'|'noul', instructions, criteria }, matching the SDK's
+// own decide() example. Returns the parsed decision object, or null when
+// unavailable. model defaults to the LAYA pilot entry.
+async function decide(state, questions, opts = {}) {
+  if (!ENABLED) return null;
+  if (circuitOpen()) return null;
+  const { model = 'laya-decision-322m', timeLimit = 60000 } = opts;
+  return enqueue(async () => {
+    try {
+      const modelId = await Promise.race([
+        getModelId(model),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('QVAC model load timeout')), timeLimit)),
+      ]);
+      const sdk = await getSdk();
+      const result = await sdk.decide({ modelId, state: String(state), questions });
+      _failures = 0;
+      _backendFault = null;
+      return result;
+    } catch (err) {
+      noteBackendError(err);
+      _failures++;
+      if (_failures >= CIRCUIT_OPEN_AFTER) _circuitOpenAt = Date.now();
+      console.error('[qvac] decide failed:', err.message);
+      return null;
+    }
+  });
+}
+
 // True when the model's weights are actually downloaded on this machine (≥1 MB
 // blob under ~/.qvac/models). Needs the SDK to map the friendly/constant name to
 // a modelId descriptor; returns false when the backend can't be loaded so the
@@ -725,7 +845,7 @@ async function listModels() {
   };
   for (const m of BUILTIN_MODELS) {
     out.set(m.name, {
-      name: m.name, label: m.label,
+      name: m.name, label: m.label, type: m.type || 'llm',
       loaded: _loaded.has(m.constant),
       installed: _loaded.has(m.constant) || installedFor(m.constant),
     });
@@ -751,7 +871,8 @@ function status() {
     enabled: ENABLED,
     defaultModel: DEFAULT_MODEL,
     maxResident: MAX_RESIDENT,
-    loaded: [..._loaded.keys()],
+    residentCaps: RESIDENT_CAPS,
+    loaded: [..._loaded.entries()].map(([name, e]) => ({ name, type: e.type })),
     circuitOpen: circuitOpen(),
     fault: _backendFault,
     cluster: {
@@ -768,6 +889,8 @@ module.exports = {
   supportsNoThink,
   stripThinking,
   complete,
+  embed,
+  decide,
   backendFault,
   listModels,
   isInstalled,
@@ -775,6 +898,8 @@ module.exports = {
   downloadModel,
   downloadStatus,
   status,
+  typeForConstant,
+  residentCapFor,
   buildClusterModelConfig,
   discoverClusterPeers,
   startClusterWorker,
