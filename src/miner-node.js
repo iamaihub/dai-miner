@@ -351,21 +351,6 @@ const FEE_REQUIRED_JOB_TYPES = new Set(['skill', 'compute']);
 // via its own escrow. Deliberately NOT in FEE_REQUIRED_JOB_TYPES.
 const CASCADE_TASK_JOB_TYPE = 'cascade-task';
 
-// Multi-peer cascade fan-out (dormant until a coordinated release raises this
-// past the chain's current height — see Phase 2 of
-// ~/.claude/plans/sunny-waddling-wilkinson.md). job-settled transitions are
-// applied purely locally per node (not part of the chainWork-validated ledger
-// replay — see tx-ledger.js), so a node that doesn't understand `contributions`
-// on that transition would silently under-credit instead of rejecting the
-// block: there is no existing activation-height primitive in this codebase to
-// gate that safely (the only prior coordinated-activation mechanism is the
-// genesis-hash pin used for the 0.4.25/0.4.36 hard forks, which is a much
-// heavier all-or-nothing chain-identity break). This introduces a lighter one.
-// Infinity = never active. A future release sets a real height once every
-// node on the network is confirmed upgraded; until then this is unreachable
-// code and the cascade behaves exactly as it did before Phase 2 existed.
-const CASCADE_FANOUT_FORK_HEIGHT = Infinity;
-
 // Canonical hash committing a fee payment to one specific job + miner + amount + nonce,
 // so a signature over it can't be replayed against a different job or a higher budget.
 // KEEP IN SYNC with the mobile wallet (dev/wallet/src/services/signing.js
@@ -1361,11 +1346,22 @@ export class DAIMinerNode {
     }
   }
 
-  // Phase 2 activation check — see CASCADE_FANOUT_FORK_HEIGHT's comment.
-  // Infinity by default, so this is always false until a future coordinated
-  // release sets a real height.
+  // Multi-peer cascade fan-out activation. job-settled transitions are
+  // applied purely locally per node (not part of the chainWork-validated
+  // ledger replay — see tx-ledger.js), so a node that doesn't understand
+  // `contributions` on that transition would silently under-credit instead
+  // of rejecting the block — too risky to gate behind a future chain height
+  // with no adoption signal. Instead this activated with the v0.4.41 genesis
+  // fork: every node on this chain's history runs code that already
+  // understands `contributions` (an old node is genesis-mismatch-rejected
+  // long before it would ever see one), so there is no in-between state left
+  // to protect against — hence unconditional here. See
+  // `~/.claude/plans/sunny-waddling-wilkinson.md` Phase 2 for the original
+  // design and `~/.claude/plans/squishy-munching-thunder.md` Phase 4 for the
+  // activation decision. Kept as its own method, rather than inlining `true`
+  // at every call site, as a single seam if a future kill-switch is needed.
   _cascadeFanOutActive() {
-    return (this.chain?.length || 0) >= CASCADE_FANOUT_FORK_HEIGHT;
+    return true;
   }
 
   /**
@@ -8210,13 +8206,14 @@ export class DAIMinerNode {
   // for now: real verification (re-checking token count from the stored
   // prompt/reply) is a separate piece of work this does not build.
   //
-  // Also does not split Phase 2 fan-out contributions (see
-  // CASCADE_FANOUT_FORK_HEIGHT) — a board-claimed 'compute' job whose cascade
-  // fanned sub-tasks out to other peers still pays the single claiming worker
-  // the whole fee here, unlike the local-compute settlement path below. Known,
-  // bounded gap: harmless while the fork is inactive (Infinity), and even once
-  // active this only under-pays sub-task contributors on the board path, it
-  // never over-pays or double-spends — not fixed by this change.
+  // Splits Phase 2 fan-out contributions the same way the local-compute
+  // settlement path does (see _cascadeFanOutActive) — a board-claimed
+  // 'compute' job whose cascade fanned sub-tasks out to other peers pays each
+  // contributor its share, not the whole fee to the single claiming worker.
+  // result.contributions is self-reported by that worker (see
+  // _computeBoardJob's routed-compute branch), same trust level as
+  // result.tokensUsed below — nothing here re-verifies either against the
+  // actual prompt/reply/sub-task work.
   async _settleBoardFeeJob({ jobId, worker, requesterAddress, maxBudget, currency, paymentTx, result }) {
     if (this._appliedEscrowJobIds.has(jobId)) return false;
     if (!requesterAddress || !(maxBudget > 0) || !paymentTx?.signature || typeof paymentTx?.nonce !== 'number') {
@@ -8249,9 +8246,16 @@ export class DAIMinerNode {
 
     const gasPrice = gasPriceFor(currency, this.config);
     const { fee, refund } = settleFee(result?.tokensUsed, gasPrice, maxBudget);
+    let contributions = null;
+    let minerFee = fee;
+    if (this._cascadeFanOutActive() && result?.contributions?.length) {
+      const split = splitContributions(fee, result.contributions, worker);
+      if (split.payouts.length) { contributions = split.payouts; minerFee = split.minerFee; }
+    }
     const settled = {
       type: 'job-settled', jobId, requesterAddress, minerAddress: worker,
-      actualTokens: result?.tokensUsed ?? null, actualFee: fee, refund, gasPrice,
+      actualTokens: result?.tokensUsed ?? null, actualFee: minerFee, refund, gasPrice,
+      ...(contributions ? { contributions } : {}),
       ...(currency && currency !== 'DAI' ? { currency } : {}),
       completedAt: Date.now(),
     };
@@ -8618,6 +8622,11 @@ export class DAIMinerNode {
               modelUsed: model,
               skillId: routed.skillId,
               tokensUsed: routed.tokensUsed,
+              // Fan-out sub-task payouts, when this cascade dispersed work to
+              // other peers — carried through to _settleBoardFeeJob so they
+              // get paid their share instead of the single claiming worker
+              // (this node) taking the whole fee. See _cascadeFanOutActive().
+              ...(routed.contributions?.length ? { contributions: routed.contributions } : {}),
               signalsUsed: [],
               methodsHash: this.methodsManager?.getStatus().hash || 'compute',
               methodsCount: 0,
@@ -8713,10 +8722,9 @@ export class DAIMinerNode {
   async computeAndSubmitJob(job) {
     const start = Date.now();
 
-    // ── Fanned-out cascade task (Phase 2 — dormant unless a future coordinated
-    // release activates CASCADE_FANOUT_FORK_HEIGHT; see that constant). No
-    // escrow/settlement here — this node gets paid via the parent cascade's
-    // own job-settled `contributions` once the whole cascade finishes.
+    // ── Fanned-out cascade task (see CASCADE_TASK_JOB_TYPE / _cascadeFanOutActive
+    // above). No escrow/settlement here — this node gets paid via the parent
+    // cascade's own job-settled `contributions` once the whole cascade finishes.
     if (job.type === CASCADE_TASK_JOB_TYPE && job.payload?.cascadeTask) {
       try {
         let taskTokens = 0;
@@ -9030,10 +9038,7 @@ export class DAIMinerNode {
 
         if (job.requesterAddress && job.maxBudget > 0 && this.escrow.has(job.id)) {
           const { fee, refund } = settleFee(tokensUsed, gasPrice, job.maxBudget);
-          // Phase 2 fan-out payout split — only computed once
-          // CASCADE_FANOUT_FORK_HEIGHT actually activates (see that constant);
-          // until then this stays null and the transition is byte-identical to
-          // pre-Phase-2 settlement, regardless of what _runTaskCascade tracked.
+          // Phase 2 fan-out payout split (see _cascadeFanOutActive).
           let contributions = null;
           let minerFee = fee;
           if (this._cascadeFanOutActive() && routedContributions?.length) {
@@ -9397,10 +9402,10 @@ export class DAIMinerNode {
       if (transition.actualFee > 0)  this.walletManager.credit(transition.minerAddress, transition.actualFee, cur);
       if (transition.proposerFee > 0 && transition.proposerAddress)
         this.walletManager.credit(transition.proposerAddress, transition.proposerFee, cur);
-      // Phase 2 fan-out payout split — additive, optional field. A node that
-      // predates this (running pre-Phase-2-activation code) simply never emits
-      // or reads it, so it never observes a transition carrying it; see
-      // CASCADE_FANOUT_FORK_HEIGHT's comment for why that matters here.
+      // Phase 2 fan-out payout split — additive, optional field. A pre-fork
+      // node never sees this transition shape at all (genesis-mismatch
+      // rejected long before it would), so there's no backward-compat case
+      // to handle here — see _cascadeFanOutActive's comment.
       if (Array.isArray(transition.contributions)) {
         for (const c of transition.contributions) {
           if (c?.address && c.amount > 0) this.walletManager.credit(c.address, c.amount, cur);

@@ -132,10 +132,9 @@ export function settleFee(actualTokens, gasPrice, maxBudget) {
   return { fee, refund: Math.max(0, maxBudget - fee), cost, underfunded: cost > maxBudget };
 }
 
-// Phase 2 cascade fan-out payout split — dormant unless the coordinator calls
-// this at all (gated behind CASCADE_FANOUT_FORK_HEIGHT in miner-node.js; see
-// that constant's comment for why this needs a real activation gate rather
-// than just being an always-on additive field).
+// Phase 2 cascade fan-out payout split — called whenever the coordinator's
+// cascade had any contributions to split (see _cascadeFanOutActive in
+// miner-node.js, always on since the v0.4.41 genesis fork).
 //
 // Splits a job's already-metered `fee` across every peer that computed part
 // of the cascade, proportional to the tokens each one actually used, and

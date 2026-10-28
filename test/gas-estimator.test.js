@@ -49,9 +49,9 @@ describe('timeoutFee', () => {
   });
 });
 
-// Phase 2 cascade fan-out payout split (dormant unless CASCADE_FANOUT_FORK_HEIGHT
-// activates in miner-node.js — see that constant). Pure money-math, tested in
-// isolation since it can't be exercised end-to-end without a multi-node network.
+// Phase 2 cascade fan-out payout split (always active since the v0.4.41
+// genesis fork — see _cascadeFanOutActive in miner-node.js). Pure money-math
+// here, tested end-to-end in test/cascade-fanout.test.js.
 describe('splitContributions', () => {
   const coordinator = 'daiCOORD';
   const peerA = 'daiPEERA';
