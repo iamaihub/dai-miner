@@ -76,11 +76,13 @@ function fxCodes(text) {
 
 function ownerRepo(text) {
   // A github.com URL is unambiguous — anchor on the host and take the two path
-  // segments right after it (https://, http://, bare, or git@host: all work).
-  // Without this anchor the generic owner/repo regex below latches onto
-  // "github.com/<owner>" as if "github.com" were the owner, since "." is a
-  // valid path-segment character and the regex has no notion of a host.
-  const url = String(text).match(/github\.com[:/]([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)/i);
+  // segments right after it (https://, http://, bare, api.github.com/repos/…,
+  // or git@host: all work). Without this anchor the generic owner/repo regex
+  // below latches onto "github.com/<owner>" as if "github.com" were the
+  // owner, since "." is a valid path-segment character and the regex has no
+  // notion of a host; the REST form (api.github.com/repos/owner/repo) has the
+  // same problem one segment further in, hence the optional "repos/" skip.
+  const url = String(text).match(/github\.com[:/](?:repos\/)?([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)/i);
   if (url) return `${url[1]}/${url[2].replace(/\.git$/, '').replace(/[.,]+$/, '')}`;
 
   const m = String(text).match(/\b([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\b/);

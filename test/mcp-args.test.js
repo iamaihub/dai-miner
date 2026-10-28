@@ -89,6 +89,10 @@ describe('buildMcpArgs', () => {
       .toEqual({ repo: 'torvalds/linux' });
     expect(buildMcpArgs({ argKeys: ['repo'] }, 'github.com/SICIndex/contracts/tree/main/src'))
       .toEqual({ repo: 'SICIndex/contracts' });
+    // Regression: the REST API form (api.github.com/repos/owner/repo) used to
+    // shape repo as "repos/SICIndex", not "SICIndex/contracts".
+    expect(buildMcpArgs({ argKeys: ['repo'] }, 'what can those smart contracts do api.github.com/repos/SICIndex/contracts'))
+      .toEqual({ repo: 'SICIndex/contracts' });
   });
 
   it('does not keep a sentence the model put on repoName', () => {

@@ -1369,6 +1369,37 @@ export class DAIMinerNode {
   }
 
   /**
+   * Run a cascade 'skill' task, whichever of the two skill shapes it is.
+   *
+   * skillsManager.runSkill only knows how to run a *coded* skill (a sandboxed
+   * run.js) — it throws "has no run.js" for a context-only reference skill
+   * (eth_*, sol_*, bnb_mcp, euler_* — see DEFAULT_ENABLED_SKILLS, "No live API
+   * calls — answered directly from bundled reference docs"). The single-skill
+   * route path (_answerSkillRoute-ish code above) already branches on
+   * `!skillEntry.code && skillEntry.context` to answer from that reference
+   * material via a plain LLM call instead; the task-cascade executor had no
+   * equivalent, so ANY cascade that picked up one of those dozens of
+   * knowledge-only skills failed that specialist on every single run. This is
+   * the same branch, reused here so both entry points agree.
+   */
+  async _runSkillForCascade(skillId, input, { model, timeoutMs = 40_000 } = {}) {
+    const skillEntry = skillsManager.getSkill(skillId);
+    if (skillEntry && !skillEntry.code && skillEntry.context) {
+      const systemContent = knowledgeSkillSystemPrompt(skillId, skillEntry.context);
+      const question = input?.message || input?.query || '';
+      const reply = (await this._llmChat(
+        [{ role: 'system', content: systemContent }, { role: 'user', content: question }],
+        { model: model || this.config.model, timeoutMs },
+      ) || '').trim();
+      return {
+        output: reply || `(${skillId}: no answer produced)`,
+        tokensUsed: Math.max(1, Math.ceil((question.length + reply.length) / 4)),
+      };
+    }
+    return skillsManager.runSkill(skillId, input, this.config);
+  }
+
+  /**
    * Phase 2 fan-out: submit ONE cascade task (a skill or MCP call — never the
    * LLM synthesis itself, which stays with the coordinator) as its own
    * gossiped 'cascade-task' job, no separate escrow (paid later via the
@@ -1471,7 +1502,7 @@ export class DAIMinerNode {
             return dispatched.output;
           }
         }
-        const { output, tokensUsed } = await skillsManager.runSkill(skillId, input, this.config);
+        const { output, tokensUsed } = await this._runSkillForCascade(skillId, input, { model });
         const used = tokensUsed || estTokens(JSON.stringify(output));
         cascadeTokens += used;
         contributions.push({ address: this.config.wallet, tokensUsed: used });
@@ -8601,7 +8632,7 @@ export class DAIMinerNode {
           model: job.model || this.config.model,
           getBrainDataDir,
           runSkill: async (skillId, input) => {
-            const { output, tokensUsed } = await skillsManager.runSkill(skillId, input, this.config);
+            const { output, tokensUsed } = await this._runSkillForCascade(skillId, input, { model: job.model || this.config.model });
             taskTokens += tokensUsed || estTokens(JSON.stringify(output));
             return output;
           },
