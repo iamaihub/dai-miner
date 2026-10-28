@@ -2678,19 +2678,36 @@ export class DAIMinerNode {
 
       // Lightweight node info (so frontends can introspect a chosen node)
       if (req.method === 'GET' && (url.pathname === '/status' || url.pathname === '/node')) {
-        const s = typeof this.getStatus === 'function' ? this.getStatus() : {};
-        const active = this.jobResults ? Array.from(this.jobResults.values()).filter(r => ['queued','computing'].includes(r.status)).length : 0;
-        const brainDataDirForStatus = getBrainDataDir();
-        const installedHfDatasets = brainDataDirForStatus
-          ? hfDatasetManager.listInstalled(brainDataDirForStatus).map(m => m.id)
-          : [];
-        return res.end(JSON.stringify({
-          ...s,
-          activeJobs: active,
-          walletApiPort: port,
-          version: 'dai-miner-network',
-          installedHfDatasets,
-        }));
+        (async () => {
+          const s = typeof this.getStatus === 'function' ? this.getStatus() : {};
+          const active = this.jobResults ? Array.from(this.jobResults.values()).filter(r => ['queued','computing'].includes(r.status)).length : 0;
+          const brainDataDirForStatus = getBrainDataDir();
+          const installedHfDatasets = brainDataDirForStatus
+            ? hfDatasetManager.listInstalled(brainDataDirForStatus).map(m => m.id)
+            : [];
+          // Non-chat engines this node has installed (currently just the Phase 1
+          // embeddings/decisions pilot) — lets a peer relay a request here instead
+          // of blindly broadcasting, or a caller skip a node that can't help at
+          // all (see _relayToPeerForEmbedding / _peersWithStatus).
+          let capabilities = [];
+          let capabilityModels = [];
+          try {
+            const qvac = await getQvacModels();
+            const installed = qvac ? (await qvac.listModels()).filter(m => (m.type || 'llm') !== 'llm' && m.installed) : [];
+            capabilities = [...new Set(installed.map(m => m.type))];
+            capabilityModels = installed.map(m => m.name);
+          } catch { /* QVAC unavailable — report no extra capabilities rather than fail /status */ }
+          res.end(JSON.stringify({
+            ...s,
+            activeJobs: active,
+            walletApiPort: port,
+            version: 'dai-miner-network',
+            installedHfDatasets,
+            capabilities,
+            capabilityModels,
+          }));
+        })();
+        return;
       }
 
       // ── Push notifications ────────────────────────────────────────────────────
@@ -2878,7 +2895,7 @@ export class DAIMinerNode {
             try {
               const qvac = await getQvacModels();
               const list = qvac ? await qvac.listModels() : [];
-              sendJson(200, { models: list.map(m => ({ name: m.name, model: m.name, label: m.label, loaded: m.loaded, installed: m.installed })) });
+              sendJson(200, { models: list.map(m => ({ name: m.name, model: m.name, label: m.label, type: m.type || 'llm', loaded: m.loaded, installed: m.installed })) });
             } catch (e) {
               sendJson(502, { error: 'QVAC unavailable: ' + e.message });
             }
@@ -3736,6 +3753,46 @@ export class DAIMinerNode {
                   : 'Local LLM is unavailable and no peer miner or configured AI provider could be reached. Try again shortly.')
               : 'Something went wrong. Please try again.';
             res.end(JSON.stringify({ type: 'chat', message: fallback }));
+          }
+        });
+        return;
+      }
+
+      // Unauthenticated peer-to-peer sibling of /openai/v1/embeddings — the
+      // same relationship /chat/ask has to /openai/v1/chat/completions. Only
+      // reachable usefully via _relayToPeerForEmbedding, which already filters
+      // to peers self-reporting the capability in /status; a stranger hitting
+      // this directly just gets a free embedding, same trust level /chat/ask
+      // already gives free chat.
+      if (req.method === 'POST' && url.pathname === '/embed/ask') {
+        let body = '';
+        req.on('data', c => body += c);
+        req.on('end', async () => {
+          try {
+            const { texts, model } = JSON.parse(body || '{}');
+            const items = Array.isArray(texts) ? texts : [];
+            if (!items.length || items.some(t => typeof t !== 'string' || !t)) {
+              res.statusCode = 400;
+              return res.end(JSON.stringify({ error: 'texts must be a non-empty array of non-empty strings' }));
+            }
+            const qvac = await getQvacModels();
+            if (!qvac || typeof qvac.embed !== 'function') {
+              res.statusCode = 503;
+              return res.end(JSON.stringify({ error: 'Embeddings are not available on this node' }));
+            }
+            const embeddings = [];
+            for (const text of items) {
+              const e = await qvac.embed(text, model ? { model } : {});
+              if (e == null) {
+                res.statusCode = 503;
+                return res.end(JSON.stringify({ error: 'Embedding generation produced no output' }));
+              }
+              embeddings.push(e);
+            }
+            res.end(JSON.stringify({ embeddings }));
+          } catch (e) {
+            res.statusCode = 400;
+            res.end(JSON.stringify({ error: e.message }));
           }
         });
         return;
@@ -7474,21 +7531,28 @@ export class DAIMinerNode {
     return null;
   }
 
+  // Shared by every "relay to the one peer that actually has X" path
+  // (_relayToPeerChat's model match, _relayToPeerForDataset, and
+  // _relayToPeerForEmbedding's capability match): fetch every known compute
+  // peer's self-reported /status once, keep only the ones whose status
+  // satisfies `predicate`. A peer whose /status fetch fails or times out is
+  // silently dropped, not retried — the caller just has fewer candidates.
+  async _peersWithStatus(predicate) {
+    const peers = await this._getComputePeers();
+    if (!peers.length) return [];
+    const results = await Promise.allSettled(peers.map(base =>
+      fetch(`${base}/status`, { signal: AbortSignal.timeout(4000) }).then(r => r.ok ? r.json() : null)
+    ));
+    return peers.filter((_, i) => results[i].status === 'fulfilled' && predicate(results[i].value));
+  }
+
   // Send a chat message to the best available peer and return the reply text.
   async _relayToPeerChat(message, history = [], requiredModel = null) {
     try {
-      let peers = await this._getComputePeers();
-
-      // Model filtering: only relay to peers self-reporting this exact model
-      if (requiredModel) {
-        const statusResults = await Promise.allSettled(peers.map(base =>
-          fetch(`${base}/status`, { signal: AbortSignal.timeout(4000) }).then(r => r.ok ? r.json() : null)
-        ));
-        peers = peers.filter((_, i) =>
-          statusResults[i].status === 'fulfilled' && statusResults[i].value?.model === requiredModel
-        );
-        if (!peers.length) return null;
-      }
+      let peers = requiredModel
+        ? await this._peersWithStatus(s => s?.model === requiredModel)
+        : await this._getComputePeers();
+      if (requiredModel && !peers.length) return null;
 
       for (const base of peers) {
         try {
@@ -7513,13 +7577,7 @@ export class DAIMinerNode {
   // No raw dataset bytes move here — just the question and the peer's answer.
   async _relayToPeerForDataset(message, history = [], datasetId) {
     try {
-      let peers = await this._getComputePeers();
-      const statusResults = await Promise.allSettled(peers.map(base =>
-        fetch(`${base}/status`, { signal: AbortSignal.timeout(4000) }).then(r => r.ok ? r.json() : null)
-      ));
-      peers = peers.filter((_, i) =>
-        statusResults[i].status === 'fulfilled' && statusResults[i].value?.installedHfDatasets?.includes(datasetId)
-      );
+      const peers = await this._peersWithStatus(s => s?.installedHfDatasets?.includes(datasetId));
       if (!peers.length) return null;
 
       for (const base of peers) {
@@ -7533,6 +7591,41 @@ export class DAIMinerNode {
           if (r.ok) {
             const data = await r.json();
             if (data.message) return data.message;
+          }
+        } catch { /* try next peer */ }
+      }
+    } catch { /* ignore */ }
+    return null;
+  }
+
+  // Capability-matched sibling of _relayToPeerChat/_relayToPeerForDataset: used
+  // when THIS node's own embedding model isn't installed, so a caller isn't
+  // stuck waiting on a multi-GB on-demand download. Only peers self-reporting
+  // 'llamacpp-embedding' in their /status capabilities are considered (and, if
+  // `model` is given, only ones that specifically have that model). Hits
+  // /embed/ask — the unauthenticated peer-to-peer sibling of the public
+  // /openai/v1/embeddings endpoint, same relationship /chat/ask already has to
+  // /openai/v1/chat/completions (free between known compute peers; billing only
+  // applies at the public edge). Returns an array of embedding vectors aligned
+  // with `texts`, or null if no peer had the capability or every call failed.
+  async _relayToPeerForEmbedding(texts, { model = null } = {}) {
+    try {
+      const peers = await this._peersWithStatus(s =>
+        s?.capabilities?.includes('llamacpp-embedding') && (!model || s?.capabilityModels?.includes(model))
+      );
+      if (!peers.length) return null;
+
+      for (const base of peers) {
+        try {
+          const r = await fetch(`${base}/embed/ask`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ texts, model }),
+            signal: AbortSignal.timeout(45000),
+          });
+          if (r.ok) {
+            const data = await r.json();
+            if (Array.isArray(data.embeddings) && data.embeddings.length === texts.length) return data.embeddings;
           }
         } catch { /* try next peer */ }
       }

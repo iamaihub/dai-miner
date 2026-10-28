@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import http from 'http';
 import { createOpenAIHandler } from '../src/api/openai-compat.js';
 import { isTrulyLocalRequest } from '../src/security/api-security.js';
 
 // Fake QVAC: streams the configured tokens one by one, like the real tokenStream.
 let nextTokens = ['Hel', 'lo', ' wor', 'ld'];
+let embeddingInstalled = true; // toggled by the Phase 3 peer-relay tests
 const calls = [];
 const qvac = {
   ENABLED: true,
@@ -12,7 +13,7 @@ const qvac = {
     { name: 'qwen3-1.7b', label: 'Qwen3 1.7B', type: 'llm', loaded: true, installed: true },
     { name: 'embeddinggemma-300m', label: 'EmbeddingGemma 300M', type: 'llamacpp-embedding', loaded: false, installed: true },
   ],
-  isInstalled: async () => true,
+  isInstalled: async (name) => (name === 'embeddinggemma-300m' ? embeddingInstalled : true),
   estimatePromptTokens: (history) => (history || []).reduce((n, m) => n + Math.ceil(((m?.content?.length || 0) + 4) / 4), 0),
   embed: async (text) => text ? [0.1, 0.2, 0.3] : null,
   chat: async (messages, opts) => {
@@ -31,6 +32,9 @@ const qvac = {
 };
 
 const paidCalls = [];
+// Default: no peer has the capability (matches a lone node with no mesh) —
+// individual tests override this to exercise the relay path.
+let relayEmbedding = vi.fn().mockResolvedValue(null);
 const node = {
   config: { llmApiKey: 'sekret-key' },
   _resolveRequestModel: (m) => m || 'qwen3-1.7b',
@@ -40,6 +44,7 @@ const node = {
     args.onToken?.('paid'); args.onToken?.('!');
     return { text: 'paid!', usage: { text: 'paid!', promptTokens: 3, completionTokens: 2, totalTokens: 5 }, fee: 5000, model: args.model };
   },
+  _relayToPeerForEmbedding: (...args) => relayEmbedding(...args),
 };
 
 let server, base;
@@ -145,6 +150,39 @@ describe('POST /embeddings', () => {
   it('lets a remote caller in free with the configured Bearer llmApiKey', async () => {
     const r = await post('/embeddings', { input: 'x' }, { ...remote, authorization: 'Bearer sekret-key' });
     expect(r.status).toBe(200);
+  });
+
+  describe('peer relay when the embedding model is not installed locally (Phase 3)', () => {
+    beforeAll(() => { embeddingInstalled = false; });
+    afterAll(() => { embeddingInstalled = true; });
+
+    it('uses a peer-matched embedding when a peer has the capability', async () => {
+      relayEmbedding = vi.fn().mockResolvedValue([[9, 8, 7], [6, 5, 4]]);
+      const r = await post('/embeddings', { input: ['a', 'b'] });
+      expect(r.status).toBe(200);
+      const j = await r.json();
+      expect(j.data).toEqual([
+        { object: 'embedding', index: 0, embedding: [9, 8, 7] },
+        { object: 'embedding', index: 1, embedding: [6, 5, 4] },
+      ]);
+      expect(relayEmbedding).toHaveBeenCalledWith(['a', 'b'], { model: null });
+    });
+
+    it('falls back to a local on-demand load when no peer has the capability either', async () => {
+      relayEmbedding = vi.fn().mockResolvedValue(null);
+      const r = await post('/embeddings', { input: 'x' });
+      expect(r.status).toBe(200);
+      const j = await r.json();
+      expect(j.data).toEqual([{ object: 'embedding', index: 0, embedding: [0.1, 0.2, 0.3] }]);
+    });
+
+    it('503s instead of relaying or downloading when a specific uninstalled model is named', async () => {
+      relayEmbedding = vi.fn().mockResolvedValue(null);
+      const r = await post('/embeddings', { input: 'x', model: 'embeddinggemma-300m' });
+      expect(r.status).toBe(503);
+      expect((await r.json()).error.code).toBe('model_not_installed');
+      expect(relayEmbedding).toHaveBeenCalledWith(['x'], { model: 'embeddinggemma-300m' });
+    });
   });
 });
 

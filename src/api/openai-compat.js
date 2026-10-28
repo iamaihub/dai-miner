@@ -542,25 +542,44 @@ export function createOpenAIHandler(node, deps) {
       if ((entry.type || 'llm') !== 'llamacpp-embedding') {
         throw new ApiError(400, `Model '${requested}' is not an embedding model.`, { param: 'model', code: 'wrong_model_type' });
       }
-      if (qvac.isInstalled && !(await qvac.isInstalled(requested))) {
-        throw new ApiError(503, `Model "${requested}" is not installed on this device.`, { code: 'model_not_installed', param: 'model' });
-      }
     }
 
-    const data = [];
+    // Phase 3: a node that never downloaded the embedding model isn't stuck
+    // doing a multi-hundred-MB fetch (or, for an explicitly named model that
+    // genuinely isn't installed, a hard failure) before it can answer — relay
+    // to a peer that already has the capability (see _relayToPeerForEmbedding
+    // / the capabilities field on /status) and use that result instead.
+    const modelToUse = requested || EMBEDDING_FALLBACK_MODEL;
+    const installedLocally = !qvac.isInstalled || (await qvac.isInstalled(modelToUse));
+    let data = null;
+    if (!installedLocally && typeof node._relayToPeerForEmbedding === 'function') {
+      const relayed = await node._relayToPeerForEmbedding(items, { model: requested }).catch(() => null);
+      if (relayed) data = relayed.map((embedding, index) => ({ object: 'embedding', index, embedding }));
+    }
+
     let promptTokens = 0;
-    for (let i = 0; i < items.length; i++) {
-      const text = items[i];
-      const embedding = await qvac.embed(text, requested ? { model: requested } : {});
-      if (embedding == null) throw new ApiError(503, 'Embedding generation produced no output', { code: 'no_output' });
-      data.push({ object: 'embedding', index: i, embedding });
-      promptTokens += qvac.estimatePromptTokens([{ content: text }]);
+    if (!data) {
+      if (!installedLocally && requested) {
+        // A specific (genuinely uninstalled) model was named and no peer had
+        // it either — don't silently kick off an arbitrary download.
+        throw new ApiError(503, `Model "${requested}" is not installed on this device, and no peer has it either.`, { code: 'model_not_installed', param: 'model' });
+      }
+      data = [];
+      for (let i = 0; i < items.length; i++) {
+        const text = items[i];
+        const embedding = await qvac.embed(text, requested ? { model: requested } : {});
+        if (embedding == null) throw new ApiError(503, 'Embedding generation produced no output', { code: 'no_output' });
+        data.push({ object: 'embedding', index: i, embedding });
+        promptTokens += qvac.estimatePromptTokens([{ content: text }]);
+      }
+    } else {
+      for (const text of items) promptTokens += qvac.estimatePromptTokens([{ content: text }]);
     }
 
     return sendJson(res, 200, {
       object: 'list',
       data,
-      model: requested || EMBEDDING_FALLBACK_MODEL,
+      model: modelToUse,
       usage: { prompt_tokens: promptTokens, total_tokens: promptTokens },
     });
   }
