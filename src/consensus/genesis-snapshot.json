@@ -1,21 +1,24 @@
 {
   "version": 1,
-  "sourceHeight": 1846,
-  "tipHeight": 1946,
-  "finalizedHeight": 1846,
-  "snapshotHash": "79dccb39f570afec232aec0b920841d922f8ac4b58e9b76d5b3f9b16c65443bb",
-  "totalMinted": 2530490200000,
-  "coinbaseDust": 0,
-  "excludedBalance": 1303750000,
+  "sourceHeight": 45502,
+  "tipHeight": 45602,
+  "finalizedHeight": 45502,
+  "snapshotHash": "aa2383acffd6091ada0aba84d1881ace5ac8418707771cd5b9c1782722b56957",
+  "totalMinted": 4805236450000,
+  "coinbaseDust": 23025000,
+  "excludedBalance": 0,
   "excluded": [
     "daiaudit000000000000000000000000000000000001",
-    "dai_p2p_escrow",
-    "dai977927faa8e24e3c7fad041d4468cacdd8c365c8"
+    "dai_p2p_escrow"
   ],
-  "sumBalances": 2529186450000,
-  "addressCount": 53,
-  "genesisTimestamp": 1789729568278,
-  "generatedAt": "2026-09-18T11:06:08.522Z",
+  "sumBalances": 4805213425000,
+  "addressCount": 65,
+  "escrowCredits": {
+    "dai47676fc51706fd78864a05ae02e9fbb54d0b2893": 10000000,
+    "daib78ceafaba856c170e16c517d82a3a4b437957e4": 20000000
+  },
+  "escrowCreditedTotal": 30000000,
+  "generatedAt": "2026-10-28T13:45:30.343Z",
   "balances": {
     "dai0f7c8c62f97a90db30ec584f6454fd6f8f4d477f": {
       "balance": 445000000,
@@ -29,13 +32,17 @@
       "balance": 27037500000,
       "nonce": 0
     },
+    "dai1f38861f3cb5b19b83ead48cc276986e88f31d9e": {
+      "balance": 4095000000,
+      "nonce": 0
+    },
     "dai2191a9572496692575c8383781671bc754e29ad4": {
       "balance": 1360000000,
       "nonce": 0
     },
     "dai2bb70f8ad9303815679b38292bd1c483b78e5e76": {
-      "balance": 0,
-      "nonce": 0,
+      "balance": 100000000,
+      "nonce": 1,
       "assets": {
         "KGST": 1611109500,
         "aiAED": 68009191,
@@ -103,7 +110,7 @@
         "aiILS": 55893092,
         "aiINR": 1756353799,
         "aiIQD": 24259235000,
-        "aiIRR": 18518500000000,
+        "aiIRR": 18518499990000,
         "aiISK": 2237368133,
         "aiJMD": 2932200772,
         "aiJOD": 13129616,
@@ -224,12 +231,19 @@
       "nonce": 0
     },
     "dai3d459b3bc9c48a6695cae6b2ea4bc8f454bf00da": {
-      "balance": 1401504825000,
+      "balance": 2938034825000,
       "nonce": 2
     },
     "dai40436108338303d415d89277bfa1768db88a8ebb": {
       "balance": 543185000000,
       "nonce": 3
+    },
+    "dai47676fc51706fd78864a05ae02e9fbb54d0b2893": {
+      "balance": 2080000000,
+      "nonce": 1,
+      "assets": {
+        "aiIRR": 10000
+      }
     },
     "dai477959dfb482cb7881d99be09f7cdd069446d4d2": {
       "balance": 43085000000,
@@ -279,6 +293,10 @@
       "balance": 585000000,
       "nonce": 0
     },
+    "dai5ad01caf3cff882dcf0fab40c767d776b2699c51": {
+      "balance": 10326975000,
+      "nonce": 1
+    },
     "dai5d96888dbe12c44fde4f8722e1ab5c0cba8d830a": {
       "balance": 10037500000,
       "nonce": 0
@@ -295,8 +313,20 @@
       "balance": 17640000000,
       "nonce": 0
     },
+    "dai7592e97883d15d6de1b76853ccf731e755e15bb9": {
+      "balance": 100000000,
+      "nonce": 0
+    },
+    "dai7cb6c064eadd83a97ee281fc897ed1b25aa1ae01": {
+      "balance": 1950000000,
+      "nonce": 0
+    },
     "dai7d78aab26065c7363fa7248d95e2998536f58ad8": {
       "balance": 860000000,
+      "nonce": 0
+    },
+    "dai7fcf6f9df1ddc7befe495397ac5121f39574ed95": {
+      "balance": 850000000,
       "nonce": 0
     },
     "dai827e6be356d5a1ddce8ac296cc078c4c339d2123": {
@@ -327,6 +357,14 @@
       "balance": 895000000,
       "nonce": 0
     },
+    "dai93827de1b513a1f8a5d8fc4b823f21adf8e016fc": {
+      "balance": 711615000000,
+      "nonce": 0
+    },
+    "dai94e52f5ec57302a4037f16d3d4e2f8e5ab501774": {
+      "balance": 60000000,
+      "nonce": 0
+    },
     "dai974a078a352ae493198264effb024f2f7589f2b8": {
       "balance": 300000000,
       "nonce": 0
@@ -347,13 +385,25 @@
       "balance": 2080000000,
       "nonce": 0
     },
+    "daib0efdfd92198dbdf2beecc2cd985bb01a4994cd9": {
+      "balance": 10000000,
+      "nonce": 0
+    },
     "daib3d535340d6b64fb3704b8b764b9eb8f41dedf09": {
       "balance": 180000000,
+      "nonce": 0
+    },
+    "daib78ceafaba856c170e16c517d82a3a4b437957e4": {
+      "balance": 25000000,
       "nonce": 0
     },
     "daiba3c4fb3005cb3d2bfbd2262361b272ce97d2b6a": {
       "balance": 1745000000,
       "nonce": 0
+    },
+    "daic625534699bcf4dd1aba0c540a6989bdaeb78fb3": {
+      "balance": 8265000000,
+      "nonce": 1
     },
     "daic7ffee3a8f99ca22e3a45db593ca1f2821be01b6": {
       "balance": 2510000000,
@@ -405,6 +455,10 @@
     },
     "daif3117fd9f64dd17fde977f2ddc6586b5d8a1a895": {
       "balance": 37395000000,
+      "nonce": 0
+    },
+    "daif704b9fc93a029d1bf7b93581b47acb15dfdcea9": {
+      "balance": 20000000,
       "nonce": 0
     },
     "daifac8d4e97982acaaebdef6c7669d3b9cb11a0ecf": {

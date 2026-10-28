@@ -16,21 +16,28 @@ import { DAIBlock } from '../core/block.js';
 import { computeChainWork } from './chain-selection.js';
 
 // ── Active network genesis (migration pin) ───────────────────────────────────
-// v0.4.36 hard fork: balances + nonces carried from height 1846 of the v0.4.35
-// chain, with the initial supply of all 161 stablecoins minted to the treasury.
+// v0.4.41 hard fork: balances + nonces carried from height 45502 of the
+// v0.4.40 chain (65 addresses, 4805.2134 DAI total, conservation-checked
+// against totalMinted on export — see scripts/genesis/export-snapshot.mjs).
 //
-// 0.4.35 minted that supply to the TREASURY_ADDRESS constant, which still held
-// its Aug-29 value — an address with no key in any keystore, only an empty
-// placeholder record. The supply was therefore unspendable. This fork repoints
-// the treasury at dai2bb70f8ad… and re-mints to it, and EXCLUDES the old
-// address: its 161 assets are already on-chain, so carrying them over while
-// minting a fresh set would have doubled the supply. Its 1.3037 DAI goes with
-// it — nobody can sign for that address either.
+// This fork activates multi-peer cascade fan-out + reward-split settlement
+// (Phase 4 — see _cascadeFanOutActive in miner-node.js): job-settled
+// transitions can now carry a `contributions` array, which a pre-fork node
+// doesn't understand. Rather than gate that behind a future chain height
+// with no adoption signal, every node on THIS genesis's history already runs
+// code that understands it — the fork boundary itself is the activation
+// signal, same mechanism as 0.4.25/0.4.36, just for a different reason.
+//
+// The P2P escrow pool (30,000,000 raw μDAI / 0.03 DAI, two open sell orders
+// whose trades hadn't completed) was credited back to the makers who locked
+// it — the same outcome a normal trade-cancel would have produced — via
+// --credit-escrow, since the open-order/trade records themselves don't carry
+// forward (reset-node.sh wipes p2p/orders.json + trades.json with the chain).
 //
 // A node whose on-disk chain has a DIFFERENT genesis auto-migrates (see
 // miner-node _migrateChainIfStale), keeping its wallets and keys.
 // Set to null to disable the pin (dev / pre-migration builds).
-export const EXPECTED_GENESIS_HASH = '65d201ec5791c0dd9af6d6892d4fc3ee5543f6d32177c3b2a08a66ebb720fc67';
+export const EXPECTED_GENESIS_HASH = 'cd3470d1fb4f18266300d254e27ad61564a72f0fc54f3e10d64b3b9d38ceb930';
 
 /** Path to the snapshot bundled with the app (ships in the build), or null. */
 export function defaultMigrationSnapshot() {
