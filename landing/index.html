@@ -121,10 +121,10 @@
     .section-full { min-height: 100dvh; display: flex; flex-direction: column; justify-content: center; }
 
     .dai-lang-select {
-      background: #fff !important;
-      color: #171717 !important;
-      border: 1px solid #d4d6d0 !important;
-    }
+    background: #00000000 !important;
+    color: #ffffff !important;
+    border: 1px solid #00000000 !important;
+}
   </style>
   <link rel="stylesheet" href="visuals.css">
 </head>
@@ -244,13 +244,13 @@
     <div class="uppercase tracking-[3px] text-xs text-[#16a34a] mb-6" data-i18n="b2b.build.eyebrow">BUILT FOR BUILDERS</div>
     <h2 class="font-display text-[40px] sm:text-[56px] md:text-[76px] leading-none" data-i18n="b2b.build.title">Run what your product needs.</h2>
   </div>
-
+  
   <div class="build-scene">
-    <div class="build-scene-photo build-models" role="img" aria-label="Glowing green model instances spread across a night city skyline"></div>
+    <div class="build-scene-photo build-pay" role="img" aria-label="A precise beam of green light measuring the level in a glass"></div>
     <div class="build-scene-scrim"></div>
     <div class="build-scene-copy reveal">
-      <h3 class="font-display text-[36px] md:text-[58px] tracking-tight mb-4" data-i18n="b2b.build.1t">Your own models</h3>
-      <p class="muted text-[17px] md:text-[21px]" data-i18n="b2b.build.1d">Bring a custom LLM or pick per job. Mount private datasets or pull from Hugging Face — the network runs it where you say it runs.</p>
+      <h3 class="font-display text-[36px] md:text-[58px] tracking-tight mb-4" data-i18n="b2b.build.4t">Pay per token</h3>
+      <p class="muted text-[17px] md:text-[21px]" data-i18n="b2b.build.4d">Metered per AI compute token with a hard budget per job. Unused budget is refunded — no idle GPUs on your bill.</p>
     </div>
   </div>
 
@@ -260,6 +260,7 @@
     <div class="build-scene-copy reveal">
       <h3 class="font-display text-[36px] md:text-[58px] tracking-tight mb-4" data-i18n="b2b.build.2t">Agents &amp; skills</h3>
       <p class="muted text-[17px] md:text-[21px]" data-i18n="b2b.build.2d">Host your data, datasets, and knowledge. Wire tools via MCP. You decide what your instances see.</p>
+      <a href="docs/" class="inline-block mt-6 neon text-[18px] md:text-[22px] hover:underline" data-i18n="b2b.build.3cta">Read the docs →</a>
     </div>
   </div>
 
@@ -267,18 +268,17 @@
     <div class="build-scene-photo build-api" role="img" aria-label="A stream of data packets flowing off a desk into the dark"></div>
     <div class="build-scene-scrim"></div>
     <div class="build-scene-copy reveal">
-      <h3 class="font-display text-[36px] md:text-[58px] tracking-tight mb-4" data-i18n="b2b.build.3t">One simple API</h3>
-      <p class="muted text-[17px] md:text-[21px]" data-i18n="b2b.build.3d">Everything is one HTTP API — jobs, chat, search, payments. Integrate in an afternoon.</p>
-      <a href="docs/" class="inline-block mt-6 neon text-[18px] md:text-[22px] hover:underline" data-i18n="b2b.build.3cta">Read the API docs →</a>
+      <h3 class="font-display text-[36px] md:text-[58px] tracking-tight mb-4" data-i18n="b2b.build.3t">Earn passively</h3>
+      <p class="muted text-[17px] md:text-[21px]" data-i18n="b2b.build.3d">Every answer or task that AI completes by using your device pays you.</p>
     </div>
   </div>
 
   <div class="build-scene">
-    <div class="build-scene-photo build-pay" role="img" aria-label="A precise beam of green light measuring the level in a glass"></div>
+    <div class="build-scene-photo build-models" role="img" aria-label="Glowing green model instances spread across a night city skyline"></div>
     <div class="build-scene-scrim"></div>
     <div class="build-scene-copy reveal">
-      <h3 class="font-display text-[36px] md:text-[58px] tracking-tight mb-4" data-i18n="b2b.build.4t">Pay per token</h3>
-      <p class="muted text-[17px] md:text-[21px]" data-i18n="b2b.build.4d">Metered per AI compute token with a hard budget per job. Unused budget is refunded — no idle GPUs on your bill.</p>
+      <h3 class="font-display text-[36px] md:text-[58px] tracking-tight mb-4" data-i18n="b2b.build.1t">Your own models</h3>
+      <p class="muted text-[17px] md:text-[21px]" data-i18n="b2b.build.1d">Bring a custom LLM or pick per job. Mount private datasets or pull from Hugging Face — the network runs it where you say it runs.</p>
     </div>
   </div>
 
