@@ -406,6 +406,61 @@ export const DEFAULT_HTTP_MCPS = {
       { name: 'get_circle_product_summary', summary: 'Summary of one Circle product', triggers: ['circle product'], argKeys: ['product'] },
     ],
   },
+
+  // Thermopolium pays DAI for compute over Solana (THERM token), x402-style:
+  // quote → caller builds+signs the transfer itself → pay → poll result. The
+  // server never touches a caller's key (therm_pay just forwards an
+  // already-signed tx), so therm_pay/therm_result can't be filled blind from
+  // chat text — 'transaction'/'signature' are REQUIRED_WHEN_LISTED and
+  // shapeArgValue only ever returns null/an extracted signature for them, so
+  // those two calls are skipped unless a real value is supplied, never fired
+  // with garbage.
+  thermopolium: {
+    url: 'https://iamai.kg/thermopolium/api/mcp',
+    homepage: 'https://iamai.kg/thermopolium',
+    summary: 'Pay DAI compute with Solana THERM: get a quote, then pay and poll the result',
+    // 'memo'/'smart contract'/'on-chain'/'blockchain' as tags, not just triggers:
+    // searchCards gives a flat +2 for any literal tag-text match in the message
+    // (mcp-catalog.js's `c.tags?.some(tag => q.includes(tag))`), which catches a
+    // user who asks for this by what it DOES (deliver an answer on-chain / via a
+    // Solana memo) without ever saying "therm" or "thermopolium" — see
+    // therm_quote/therm_pay/therm_result's triggers below for the same reason.
+    tags: ['crypto', 'solana', 'payments', 'compute', 'memo', 'smart contract', 'on-chain', 'blockchain'],
+    triggers: ['thermopolium', 'therm', 'solana payment', 'pay with therm'],
+    tools: [
+      { name: 'therm_status', summary: 'THERM mint, treasury, reply wallet and current rate', triggers: ['therm status', 'therm rate'], argKeys: [] },
+      {
+        name: 'therm_quote',
+        // Keeps 'THERM'/'x402' for operators who do know the system, but leads
+        // with the plain description of what it actually does — the entry
+        // point for someone who just wants an on-chain/memo-delivered answer
+        // and has never heard of THERM.
+        summary: 'Quote the cost, in Solana, to send a prompt on-chain as a memo and get the inference answer back the same way (an x402 payment challenge)',
+        triggers: [
+          'therm quote', 'quote prompt',
+          'smart contract on solana', 'solana smart contract', 'to a smart contract',
+          'send to a smart contract', 'post this on-chain', 'post this to solana',
+          'on-chain inference', 'inference on-chain', 'inference on solana', 'on-chain answer',
+          'answer on-chain', 'answer via memo', 'response via memo', 'send this via memo',
+          'solana memo', 'via a memo', 'using a memo', 'pay with crypto for this',
+          'pay with solana for this', 'pay on solana for this', 'blockchain payment for this',
+        ],
+        argKeys: ['prompt'],
+      },
+      {
+        name: 'therm_pay',
+        summary: 'Submit an already-signed Solana transaction paying a therm_quote — the answer comes back on-chain as its own memo',
+        triggers: ['therm pay', 'submit payment', 'i signed the transaction', 'here is the signed transaction'],
+        argKeys: ['prompt', 'transaction'],
+      },
+      {
+        name: 'therm_result',
+        summary: 'Poll a paid job result by its Solana transaction signature — the inference answer delivered on-chain',
+        triggers: ['therm result', 'check my solana payment', 'did my payment go through', 'check my on-chain job'],
+        argKeys: ['signature'],
+      },
+    ],
+  },
 };
 
 export function defaultHttpSpecs({ disabled = [] } = {}) {

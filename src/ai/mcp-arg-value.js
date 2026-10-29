@@ -26,6 +26,7 @@ const WORD_STOP = new Set([
 // Keys that, when the catalog lists them, must be filled or the call is skipped.
 export const REQUIRED_WHEN_LISTED = new Set([
   'repoName', 'libraryId', 'code', 'indexes', 'url', 'section', 'owner', 'repo',
+  'transaction', 'signature',
 ]);
 
 // Listed keys a tool can run without. An IP lookup with no address uses the exit IP.
@@ -187,6 +188,19 @@ export function shapeArgValue(key, text) {
       const m = clean.match(/\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+/);
       return m ? m[0] : null;
     }
+    case 'signature': {
+      // A Solana tx signature is base58, ~87-88 chars — pull the matching token
+      // out of surrounding text ("check signature abc123...") rather than
+      // handing the whole sentence through, same approach as 'ip'/'url'.
+      const m = clean.match(/\b[1-9A-HJ-NP-Za-km-z]{64,100}\b/);
+      return m ? m[0] : null;
+    }
+    case 'transaction':
+      // A signed Solana transaction is base64 binary data the caller must build
+      // and sign itself — never derivable from a chat sentence. Always null so
+      // the tool is skipped rather than called with garbage (see
+      // missingRequiredArgs/REQUIRED_WHEN_LISTED).
+      return null;
     case 'code':
     case 'indexes':
     case 'operations':

@@ -55,6 +55,19 @@ describe('buildMcpArgs', () => {
     expect(buildMcpArgs({ argKeys: ['indexes'] }, 'search the onion')).toBeNull();
   });
 
+  it('refuses therm_pay blind — a signed Solana tx can never come from chat text', () => {
+    // therm_pay forwards an already-signed transaction; stuffing the user's
+    // sentence into it would just produce a doomed-to-fail remote call.
+    expect(buildMcpArgs({ argKeys: ['prompt', 'transaction'] }, 'pay for my quote now')).toBeNull();
+  });
+
+  it('extracts an inline Solana signature for therm_result but refuses without one', () => {
+    const sig = '5VERv8NMvzbJMEkV8xnrLkEaWRtSz9CEzuwojAFaRejJrGqQmM4CxNr1QLCeqQqNJKDT4fK2fVSVVFrqnE2TN5n9';
+    expect(buildMcpArgs({ argKeys: ['signature'] }, `what's the result for signature ${sig}`))
+      .toEqual({ signature: sig });
+    expect(buildMcpArgs({ argKeys: ['signature'] }, 'what happened to my last payment?')).toBeNull();
+  });
+
   it('strips the instruction tail and extracts the value the field wants', () => {
     expect(buildMcpArgs({ argKeys: ['search_phrase'] }, 'aws docs. Answer briefly with a fact from the tool, not a guess.'))
       .toEqual({ search_phrase: 'aws docs' });

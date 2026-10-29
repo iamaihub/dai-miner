@@ -258,13 +258,14 @@ describe('default HTTP MCPs', () => {
       'circle', 'cloudflare-docs', 'coingecko', 'coinpaprika', 'context7', 'crypto-com',
       'deepwiki', 'dexpaprika', 'dflow', 'gate-docs', 'gate-info', 'gate-market', 'gate-news',
       'gitmcp', 'goji', 'huggingface', 'inside-ads', 'layerzero', 'lifi', 'microsoft-learn',
-      'neynar', 'philidor', 'privy', 'solana', 'tandem', 'zerion',
+      'neynar', 'philidor', 'privy', 'solana', 'tandem', 'thermopolium', 'zerion',
     ]);
     const cards = defaultHttpSeedCards();
     expect(cards.some(c => c.mcpId === 'tandem' && c.tool === 'search_docs')).toBe(true);
     expect(cards.some(c => c.mcpId === 'airshelf')).toBe(true);
     expect(cards.some(c => c.mcpId === 'deepwiki' && c.tool === 'ask_question')).toBe(true);
     expect(cards.some(c => c.mcpId === 'huggingface' && c.tool === 'hub_repo_search')).toBe(true);
+    expect(cards.some(c => c.mcpId === 'thermopolium' && c.tool === 'therm_quote')).toBe(true);
   });
 
   it('every shipped default is anonymous — no key, token or auth header', () => {
