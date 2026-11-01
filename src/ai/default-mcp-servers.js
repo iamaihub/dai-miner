@@ -461,6 +461,52 @@ export const DEFAULT_HTTP_MCPS = {
       },
     ],
   },
+
+  // COMPEX's SICI provider network. The MCP tools just call @compex/mcp's own
+  // 8-tool set (see COMPEX/repo/packages/mcp) over this same HTTP transport instead
+  // of stdio — mounted at POST /mcp inside the sici-api service (apps/api), which
+  // nginx reaches at /sici/api/mcp. quote_sequence/start_sequence take a whole
+  // Sequence object, not a scalar, so the planner can't synthesize one from chat
+  // text alone; it still surfaces list_providers/fund_status/sequence_status/
+  // pull_result for read-only lookups.
+  sici: {
+    url: 'https://iamai.kg/sici/api/mcp',
+    homepage: 'https://iamai.kg/sici',
+    summary: 'COMPEX SICI: quote/run multi-provider sequences, fund status, Irys upload, contract calls',
+    tags: ['crypto', 'ethereum', 'sici', 'compex', 'irys'],
+    triggers: ['sici', 'compex', 'sequence', 'provider sequence'],
+    tools: [
+      { name: 'list_providers', summary: 'List SICI providers and whether each one is live', triggers: ['sici providers', 'list providers'], argKeys: [] },
+      { name: 'quote_sequence', summary: 'Quote a SICI sequence — does not pay', triggers: ['quote sequence', 'sici quote'], argKeys: ['sequence'] },
+      { name: 'fund_status', summary: 'Lots, usd value, unpriced assets and agent addresses for an owner', triggers: ['fund status', 'sici balance'], argKeys: ['owner'] },
+      { name: 'upload_request', summary: 'Store text (or resolve an existing id) on Irys', triggers: ['irys upload', 'store on irys'], argKeys: ['filename', 'contentType', 'text', 'irysId'] },
+      { name: 'start_sequence', summary: 'Start a quoted sequence; without paymentTx returns the x402 challenge', triggers: ['start sequence', 'run sequence'], argKeys: ['quoteId', 'sequence', 'paymentTx'] },
+      { name: 'sequence_status', summary: 'Status of a sequence, including its steps', triggers: ['sequence status'], argKeys: ['id'] },
+      { name: 'pull_result', summary: 'Read an Irys object by id', triggers: ['pull irys result', 'read irys id'], argKeys: ['irysId'] },
+      { name: 'call_contract', summary: 'Prepare (unsigned) an Ethereum contract call', triggers: ['call contract', 'prepare contract call'], argKeys: ['text', 'to', 'function', 'args'] },
+    ],
+  },
+
+  // iamai.kg's own self-knowledge server (standalone process on the iamai.kg host,
+  // see dai/iamai-mcp) — so a model using this node can answer questions about
+  // iamai.kg itself (docs, deployment, release history) instead of guessing, and can
+  // discover the other MCP servers on the domain (thermopolium, sici) via
+  // get_mcp_directory.
+  iamai: {
+    url: 'https://iamai.kg/mcp',
+    homepage: 'https://iamai.kg',
+    summary: 'iamai.kg self-knowledge: miner node docs, server/nginx topology, release history, sibling MCPs',
+    tags: ['iamai', 'docs', 'dai'],
+    triggers: ['iamai.kg', 'iamai docs', 'dai miner docs', 'dai node docs'],
+    tools: [
+      { name: 'list_docs', summary: 'List the DAI miner node docs bundled with this server', triggers: ['list iamai docs', 'what docs exist'], argKeys: [] },
+      { name: 'get_doc', summary: 'Fetch one DAI miner node doc by name', triggers: ['read iamai doc', 'get dai doc'], argKeys: ['name'] },
+      { name: 'search_docs', summary: 'Keyword search across the DAI miner node docs', triggers: ['search iamai docs', 'search dai docs'], argKeys: ['query'] },
+      { name: 'get_server_topology', summary: 'How iamai.kg is deployed: nginx routes, pm2 processes, what proxies where', triggers: ['iamai server topology', 'iamai.kg routes', 'how is iamai.kg deployed'], argKeys: [] },
+      { name: 'get_release_info', summary: 'DAI release history: miner version, genesis hard fork, prior release', triggers: ['dai release history', 'dai version', 'genesis hard fork'], argKeys: [] },
+      { name: 'get_mcp_directory', summary: 'Every MCP server reachable on iamai.kg, with url and purpose', triggers: ['iamai mcp directory', 'what mcps does iamai have'], argKeys: [] },
+    ],
+  },
 };
 
 export function defaultHttpSpecs({ disabled = [] } = {}) {

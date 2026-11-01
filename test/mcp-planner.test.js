@@ -257,8 +257,8 @@ describe('default HTTP MCPs', () => {
       'ai-portal', 'airshelf', 'akari', 'akari-trust', 'avalanche', 'aws-knowledge',
       'circle', 'cloudflare-docs', 'coingecko', 'coinpaprika', 'context7', 'crypto-com',
       'deepwiki', 'dexpaprika', 'dflow', 'gate-docs', 'gate-info', 'gate-market', 'gate-news',
-      'gitmcp', 'goji', 'huggingface', 'inside-ads', 'layerzero', 'lifi', 'microsoft-learn',
-      'neynar', 'philidor', 'privy', 'solana', 'tandem', 'thermopolium', 'zerion',
+      'gitmcp', 'goji', 'huggingface', 'iamai', 'inside-ads', 'layerzero', 'lifi', 'microsoft-learn',
+      'neynar', 'philidor', 'privy', 'sici', 'solana', 'tandem', 'thermopolium', 'zerion',
     ]);
     const cards = defaultHttpSeedCards();
     expect(cards.some(c => c.mcpId === 'tandem' && c.tool === 'search_docs')).toBe(true);
