@@ -5,12 +5,12 @@
 
 import { PUBLIC_APIS_PACK } from './public-apis.js';
 import { ONION_SEARCH_PACK } from './onion-search.js';
+import { buildDaiNodePack } from './dai-node.js';
 
-export const BUILTIN_PACKS = [PUBLIC_APIS_PACK, ONION_SEARCH_PACK];
-
-export function loadBuiltinPacks({ disabled = [] } = {}) {
+export function loadBuiltinPacks({ disabled = [], getConfig } = {}) {
   const mute = new Set(disabled.map(String));
-  return BUILTIN_PACKS
+  const packs = [PUBLIC_APIS_PACK, ONION_SEARCH_PACK, buildDaiNodePack(getConfig)];
+  return packs
     .filter(p => !mute.has(p.id))
     .map(p => ({
       ...p,

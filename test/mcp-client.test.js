@@ -66,7 +66,7 @@ describe('McpManager', () => {
     expect(names).toContain('public-apis__public_weather_forecast');
     expect(names).toContain('onion-search__get_sources');
     expect(mgr.listTools().filter(t => t.server === 'public-apis').length).toBe(22);
-    expect(mgr.listTools().filter(t => t.source === 'builtin').length).toBe(25);
+    expect(mgr.listTools().filter(t => t.source === 'builtin').length).toBe(36);
     mgr.closeAll();
   });
 });

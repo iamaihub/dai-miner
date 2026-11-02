@@ -28,7 +28,7 @@ describe('httpHeadersFromSpec', () => {
 describe('builtin packs', () => {
   it('ships 22 public-apis tools plus onion-search', () => {
     const packs = loadBuiltinPacks();
-    expect(packs.map(p => p.id).sort()).toEqual(['onion-search', 'public-apis']);
+    expect(packs.map(p => p.id).sort()).toEqual(['dai', 'onion-search', 'public-apis']);
     const tools = listBuiltinTools();
     expect(tools.filter(t => t.server === 'public-apis')).toHaveLength(22);
     expect(tools.map(t => t.name)).toEqual(expect.arrayContaining([
@@ -37,6 +37,8 @@ describe('builtin packs', () => {
       'onion-search__get_sources',
       'onion-search__fetch_pages',
       'onion-search__fetch_specific_page',
+      'dai__get_status',
+      'dai__peer_capabilities',
     ]));
   });
 

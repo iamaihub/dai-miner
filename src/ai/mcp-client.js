@@ -271,7 +271,7 @@ export class McpManager {
     const cfg = this.getConfig() || {};
     if (cfg.mcpBuiltin?.enabled === false) return;
     const disabled = cfg.mcpBuiltin?.disabled || [];
-    for (const pack of loadBuiltinPacks({ disabled })) {
+    for (const pack of loadBuiltinPacks({ disabled, getConfig: this.getConfig })) {
       // Never let a user server overwrite a builtin id.
       if (this.connections.has(pack.id) && this.connections.get(pack.id).transport !== 'builtin') continue;
       this.connections.set(pack.id, new BuiltinConnection(pack.id, pack));
