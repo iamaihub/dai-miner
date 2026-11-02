@@ -97,7 +97,7 @@ export function pinnedCards(cards, message) {
 export function searchCards(cards, query, k = 8) {
   const q = String(query || '').toLowerCase().trim();
   if (!q || !cards?.length) return [];
-  const terms = q.split(/[^a-z0-9]+/i).filter(t => t.length > 1);
+  const terms = q.split(/[^a-z0-9]+/i).filter(t => t.length > 1 && !STOP.has(t));
   const scored = [];
   for (const c of cards) {
     let score = 0;

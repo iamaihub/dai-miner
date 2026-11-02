@@ -692,6 +692,7 @@ export function buildAggregatorPrompt(userMessage, blocks, plan = {}) {
     '- If a specialist failed, work with what you have and note the gap briefly.',
     '- Do not invent tool results that were not provided.',
     '- Cite forecast facts and tool outputs; never fabricate weather or place data.',
+    plan.hasHfModel ? '- An "hf-model" result is a list of Hugging Face models that MIGHT fit — it is a search result, not generated media. No image, video or audio was produced. Never say something was "generated", "created" or "made"; say which models were found and that the user (or a paid compute job) would still need to run one.' : '',
     plan.synthesisNotes ? `- Synthesis guidance: ${String(plan.synthesisNotes).slice(0, 400)}` : '',
   ].filter(Boolean).join('\n');
 
@@ -713,8 +714,9 @@ async function aggregateResults(userMessage, results, priorContext, runners, pla
   const blocks = results.map(r => {
     if (!r.ok) return `### ${r.id} (failed)\n${r.error}`;
     let body;
-    if (r.kind === 'hf-model') body = r.output?.suggestion || JSON.stringify(r.output?.models || [], null, 2);
-    else if (r.kind === 'dataset') {
+    if (r.kind === 'hf-model') {
+      body = `[SEARCH RESULT, NOT GENERATED — these models were found, none has run]\n${r.output?.suggestion || JSON.stringify(r.output?.models || [], null, 2)}`;
+    } else if (r.kind === 'dataset') {
       if (r.output?.slice) body = `Dataset ${r.output.datasetId} rows:\n${r.output.slice}`;
       else body = JSON.stringify(r.output, null, 2);
     } else if (typeof r.output === 'string') body = r.output;
@@ -722,7 +724,8 @@ async function aggregateResults(userMessage, results, priorContext, runners, pla
     return `### ${r.id} (${r.kind}${r.skillId ? ':' + r.skillId : ''}${r.server ? ' @' + r.server : ''})\n${String(body).slice(0, AGGREGATOR_BLOCK_MAX_CHARS)}`;
   }).join('\n\n');
 
-  const { system, user } = buildAggregatorPrompt(userMessage, blocks, plan);
+  const hasHfModel = results.some(r => r.kind === 'hf-model');
+  const { system, user } = buildAggregatorPrompt(userMessage, blocks, { ...plan, hasHfModel });
 
   try {
     const reply = await runners.llm(
