@@ -102,6 +102,7 @@ import { needsDatasetLookup, searchDatasets, disambiguateDataset } from './datas
 import { needsHfModelLookup, searchModelsWithFallback, pickRelevantModels, formatModelSuggestions } from './datasets/hf-model-search.js';
 import * as hfDatasetManager from './datasets/hf-dataset-manager.js';
 import { serveHfDataset, pullHfDatasetFromPeer } from './datasets/hf-dataset-peer-serve.js';
+import * as hfModelManager from './datasets/hf-model-manager.js';
 import { applyCorsHeaders, rejectNonLocalStateChange, isTrulyLocalRequest } from './security/api-security.js';
 import { readLimitedBody, MAX_BODY_BYTES } from './security/bootnode-auth.js';
 import { normalizeSkillId } from './security/skill-id.js';
@@ -1492,6 +1493,13 @@ export class DAIMinerNode {
     const runners = {
       model: model || this.config.model,
       getBrainDataDir,
+      // Used by runOneTask's 'hf-model' case to tell the user when a peer
+      // already has a matching generation model installed, instead of only
+      // ever suggesting a model to go install themselves.
+      findPeersWithModel: async (modelId) => {
+        try { return await this._peersWithStatus(s => s?.installedHfModels?.includes(modelId)); }
+        catch { return []; }
+      },
       runSkill: async (skillId, input) => {
         if (remainingTokens() <= 0) throw new Error('Fee budget exhausted — skipped');
         if (fanOutActive) {
@@ -2685,6 +2693,14 @@ export class DAIMinerNode {
           const installedHfDatasets = brainDataDirForStatus
             ? hfDatasetManager.listInstalled(brainDataDirForStatus).map(m => m.id)
             : [];
+          // Generation models (text-to-image/video/audio) this node declares it
+          // can run — lets the hf-model task-cascade step (see task-cascade.js)
+          // point at a peer that already has one instead of only ever saying
+          // "go install this yourself" (see hf-model-manager.js for why this is
+          // a declared capability, not an auto-downloaded one).
+          const installedHfModels = brainDataDirForStatus
+            ? hfModelManager.listInstalled(brainDataDirForStatus).map(m => m.id)
+            : [];
           // Non-chat engines this node has installed (currently just the Phase 1
           // embeddings/decisions pilot) — lets a peer relay a request here instead
           // of blindly broadcasting, or a caller skip a node that can't help at
@@ -2709,6 +2725,7 @@ export class DAIMinerNode {
             walletApiPort: port,
             version: 'dai-miner-network',
             installedHfDatasets,
+            installedHfModels,
             capabilities,
             capabilityModels,
             enabledSkillIds,
@@ -4310,6 +4327,58 @@ export class DAIMinerNode {
               res.statusCode = 502;
               res.end(JSON.stringify({ error: e.message }));
             }
+          })();
+          return;
+        }
+      }
+
+      // ── HF generation-model management (list / delete / declare installed) ───
+      // See hf-model-manager.js: this records a declared capability (the
+      // operator runs the actual generation pipeline outside this codebase),
+      // not a weight download — unlike /api/hf-dataset's download endpoint.
+      if (req.method === 'GET' && url.pathname === '/api/hf-model') {
+        const brainDir = getBrainDataDir();
+        return res.end(JSON.stringify({ models: brainDir ? hfModelManager.listInstalled(brainDir) : [] }));
+      }
+
+      {
+        const delMatch = url.pathname.match(/^\/api\/hf-model\/([^/]+)$/);
+        if (req.method === 'DELETE' && delMatch) {
+          if (!isTrulyLocalRequest(req)) {
+            res.statusCode = 403;
+            return res.end(JSON.stringify({ error: 'This endpoint is restricted to localhost.' }));
+          }
+          const brainDir = getBrainDataDir();
+          const modelId = decodeURIComponent(delMatch[1]);
+          if (brainDir) hfModelManager.deleteModel(brainDir, modelId);
+          return res.end(JSON.stringify({ ok: true }));
+        }
+      }
+
+      {
+        const installMatch = url.pathname.match(/^\/api\/hf-model\/([^/]+)\/install$/);
+        if (req.method === 'POST' && installMatch) {
+          if (!isTrulyLocalRequest(req)) {
+            res.statusCode = 403;
+            return res.end(JSON.stringify({ error: 'This endpoint is restricted to localhost.' }));
+          }
+          const modelId = decodeURIComponent(installMatch[1]);
+          const brainDir = getBrainDataDir();
+          if (!brainDir) { res.statusCode = 500; res.end(JSON.stringify({ error: 'brain data dir unavailable' })); return; }
+          (async () => {
+            let body = '';
+            req.on('data', c => { body += c; });
+            req.on('end', async () => {
+              try {
+                let pipelineTag;
+                try { pipelineTag = body ? JSON.parse(body).pipelineTag : undefined; } catch { /* no body */ }
+                const manifest = await hfModelManager.registerInstalled(brainDir, modelId, { pipelineTag });
+                res.end(JSON.stringify({ ok: true, manifest }));
+              } catch (e) {
+                res.statusCode = 502;
+                res.end(JSON.stringify({ error: e.message }));
+              }
+            });
           })();
           return;
         }

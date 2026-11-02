@@ -95,7 +95,7 @@ describe('dai-node builtin pack', () => {
     expect(out.queried).toBe(2);
     expect(out.responded).toBe(1);
     expect(out.peers).toEqual([
-      { host: 'peer-a', wallet: 'dai_a', model: 'qwen3-1.7b', chainHeight: undefined, region: undefined, installedHfDatasets: ['ds1'], capabilities: [], capabilityModels: [] },
+      { host: 'peer-a', wallet: 'dai_a', model: 'qwen3-1.7b', chainHeight: undefined, region: undefined, installedHfDatasets: ['ds1'], installedHfModels: [], capabilities: [], capabilityModels: [] },
     ]);
   });
 });

@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { planTaskCascade, executeTaskCascade, resolveTaskArgs } from '../src/ai/task-cascade.js';
+import { describe, it, expect, vi } from 'vitest';
+import { planTaskCascade, executeTaskCascade, resolveTaskArgs, findHfModelPeerCounts } from '../src/ai/task-cascade.js';
 
 const webSearch = {
   id: 'web_search',
@@ -210,6 +210,29 @@ describe('executeTaskCascade', () => {
     expect(results.filter(r => r.ok).length).toBe(2);
     expect(genSawPrior).toBe(true);
     expect(reply).toMatch(/18/);
+  });
+});
+
+describe('findHfModelPeerCounts', () => {
+  const models = [{ id: 'a/model' }, { id: 'b/model' }];
+
+  it('returns {} when there are no models or no finder was provided', async () => {
+    expect(await findHfModelPeerCounts([], vi.fn())).toEqual({});
+    expect(await findHfModelPeerCounts(models, undefined)).toEqual({});
+  });
+
+  it('only includes models with at least one matching peer', async () => {
+    const finder = vi.fn(async (id) => (id === 'a/model' ? ['http://peer-a:3456', 'http://peer-b:3456'] : []));
+    const counts = await findHfModelPeerCounts(models, finder);
+    expect(counts).toEqual({ 'a/model': 2 });
+    expect(finder).toHaveBeenCalledWith('a/model');
+    expect(finder).toHaveBeenCalledWith('b/model');
+  });
+
+  it('treats a rejected lookup as zero peers rather than throwing', async () => {
+    const finder = vi.fn(async (id) => { if (id === 'a/model') throw new Error('bootnode down'); return ['http://peer-x:3456']; });
+    const counts = await findHfModelPeerCounts(models, finder);
+    expect(counts).toEqual({ 'b/model': 1 });
   });
 });
 

@@ -160,7 +160,7 @@ export function buildDaiNodePack(getConfig = () => ({})) {
     },
     {
       name: 'peer_capabilities',
-      description: "What each known peer actually has installed right now: chat model, installed HF datasets, extra engines (e.g. embeddings). Check this before assuming a peer can serve a model or dataset — a peer being online does not mean it has the specific thing you need.",
+      description: "What each known peer actually has installed right now: chat model, installed HF datasets, generation models (text-to-image/video/audio), extra engines (e.g. embeddings). Check this before assuming a peer can serve a model or dataset — a peer being online does not mean it has the specific thing you need.",
       inputSchema: {
         type: 'object',
         properties: { limit: { type: 'number', description: 'Max peers to query, default 25' } },
@@ -180,6 +180,7 @@ export function buildDaiNodePack(getConfig = () => ({})) {
             host: p.host, wallet: p.wallet,
             model: s.model, chainHeight: s.chainHeight, region: s.region,
             installedHfDatasets: s.installedHfDatasets || [],
+            installedHfModels: s.installedHfModels || [],
             capabilities: s.capabilities || [],
             capabilityModels: s.capabilityModels || [],
           };

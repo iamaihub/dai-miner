@@ -623,6 +623,23 @@ export function buildMcpArgs(tool, text) {
   return null;   // nothing text-shaped to fill — not callable blind
 }
 
+// For each candidate model, ask `findPeersWithModel` (runners.findPeersWithModel
+// — see miner-node.js) whether a live peer already self-reports having it
+// installed (/status.installedHfModels), so the hf-model task result can say
+// so instead of only ever suggesting the user install it themselves. Returns
+// {} immediately, with no calls, when there's nothing to check or no such
+// runner was provided (e.g. the fanned-out 'cascade-task' job path).
+export async function findHfModelPeerCounts(models, findPeersWithModel) {
+  const peerCounts = {};
+  if (!models?.length || typeof findPeersWithModel !== 'function') return peerCounts;
+  const settled = await Promise.allSettled(models.map(m => findPeersWithModel(m.id)));
+  models.forEach((m, i) => {
+    const peers = settled[i].status === 'fulfilled' ? settled[i].value : [];
+    if (peers?.length) peerCounts[m.id] = peers.length;
+  });
+  return peerCounts;
+}
+
 // Exported so a job claiming a single fanned-out cascade task (see
 // planToFanOutJobs / miner-node.js's 'cascade-task' job type) can run exactly
 // that one task the same way executeTaskCascade's own per-stage loop does.
@@ -659,7 +676,8 @@ export async function runOneTask(task, runners, userMessage, priorContext, prior
         : (task.query || userMessage);
       const candidates = await searchModelsWithFallback(q);
       const models = await pickRelevantModels(q, candidates, { model: runners.model });
-      return { models, suggestion: formatModelSuggestions(q, models) };
+      const peerCounts = await findHfModelPeerCounts(models, runners.findPeersWithModel);
+      return { models, peerCounts, suggestion: formatModelSuggestions(q, models, { peerCounts }) };
     }
     case 'llm-generate': {
       let prompt = task.query || userMessage;

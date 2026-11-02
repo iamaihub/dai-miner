@@ -130,7 +130,7 @@ export async function pickRelevantModels(question, candidates, { model } = {}, m
 }
 
 /** Format model suggestions as a Markdown reply for chat. */
-export function formatModelSuggestions(question, models) {
+export function formatModelSuggestions(question, models, { peerCounts = {} } = {}) {
   if (!models?.length) {
     return `I couldn't find Hugging Face models for "${question}". Try browsing [huggingface.co/models](https://huggingface.co/models) and search for text-to-video, text-to-image, or text-to-audio.`;
   }
@@ -139,15 +139,21 @@ export function formatModelSuggestions(question, models) {
     const tags = m.tags?.slice(0, 4).join(', ') || 'none';
     const pipe = m.pipelineTag ? ` · ${m.pipelineTag}` : '';
     const desc = m.description ? ` — ${m.description.slice(0, 120)}` : '';
-    return `- **[${m.id}](https://huggingface.co/${m.id})**${pipe}${desc}\n  Tags: ${tags}`;
+    const peerN = peerCounts[m.id] || 0;
+    const peerNote = peerN > 0 ? `\n  ✓ ${peerN} network peer${peerN > 1 ? 's' : ''} already ha${peerN > 1 ? 've' : 's'} this installed` : '';
+    return `- **[${m.id}](https://huggingface.co/${m.id})**${pipe}${desc}\n  Tags: ${tags}${peerNote}`;
   });
+
+  const anyPeer = models.some(m => (peerCounts[m.id] || 0) > 0);
 
   return [
     "I can't generate media directly in chat, but these Hugging Face models look like a good fit:",
     '',
     ...lines,
     '',
-    'Pick a model, install its dependencies (often `diffusers` / `transformers`), and run inference locally or via a Hugging Face Space.',
+    anyPeer
+      ? 'A model marked ✓ above is already installed on a network peer — submit a paid compute job to have it run there.'
+      : 'Pick a model, install its dependencies (often `diffusers` / `transformers`), and run inference locally or via a Hugging Face Space.',
     'In **Public mode** you can also submit a paid compute job once a miner has the model available.',
   ].join('\n');
 }
