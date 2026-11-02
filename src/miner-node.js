@@ -380,6 +380,10 @@ const DEFAULT_BOOTNODES = [
 // later), so it must never be cached for the whole process lifetime.
 const PUBLIC_HOST_RETRY_MS = 10 * 60 * 1000;
 
+// How long _relayToPeerForSkill polls a peer it already knows has the skill
+// enabled before giving up on that peer and trying the next one.
+const RELAY_SKILL_TIMEOUT_MS = 30_000;
+
 export class DAIMinerNode {
   constructor(config) {
     // Resolve new friendly RPC format ("rpc" + providers) into legacy format
@@ -2693,6 +2697,12 @@ export class DAIMinerNode {
             capabilities = [...new Set(installed.map(m => m.type))];
             capabilityModels = installed.map(m => m.name);
           } catch { /* QVAC unavailable — report no extra capabilities rather than fail /status */ }
+          // Skills this node will actually run — lets _relayToPeerForSkill target
+          // a peer that has it instead of dropping a job the requester needed.
+          let enabledSkillIds = [];
+          try {
+            enabledSkillIds = skillsManager.getAllSkills().map(sk => sk.id).filter(id => this.isSkillEnabled(id));
+          } catch { /* skills unavailable — report none rather than fail /status */ }
           res.end(JSON.stringify({
             ...s,
             activeJobs: active,
@@ -2701,6 +2711,7 @@ export class DAIMinerNode {
             installedHfDatasets,
             capabilities,
             capabilityModels,
+            enabledSkillIds,
           }));
         })();
         return;
@@ -7594,6 +7605,47 @@ export class DAIMinerNode {
     return null;
   }
 
+  // Sibling of _relayToPeerForDataset, filtered by enabledSkillIds instead of
+  // installedHfDatasets: used when computeAndSubmitJob gets a 'skill' job for
+  // a skill THIS node doesn't have enabled, instead of just dropping it.
+  // Posts the job to a peer that self-reports the skill enabled, then polls
+  // that peer's own /job/:id/result — same POST-then-poll shape
+  // _dispatchCascadeTask already uses for gossip fan-out, but targeted at a
+  // known-capable peer instead of broadcasting and hoping. The peer runs and
+  // settles the job entirely on its own side (own fee/reward pipeline); this
+  // node only relays the finished result back to whoever is polling it here.
+  async _relayToPeerForSkill(job) {
+    try {
+      const peers = await this._peersWithStatus(s => s?.enabledSkillIds?.includes(job.skillId));
+      if (!peers.length) return null;
+
+      for (const base of peers) {
+        try {
+          const posted = await fetch(`${base}/job`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...job, _relayed: true }),
+            signal: AbortSignal.timeout(8000),
+          });
+          if (!posted.ok) continue;
+
+          const deadline = Date.now() + RELAY_SKILL_TIMEOUT_MS;
+          while (Date.now() < deadline) {
+            await new Promise(r => setTimeout(r, 800));
+            try {
+              const rr = await fetch(`${base}/job/${job.id}/result`, { signal: AbortSignal.timeout(6000) });
+              if (rr.status === 200) {
+                const data = await rr.json();
+                if (data.verdict) return data;
+              }
+            } catch { /* keep polling until deadline */ }
+          }
+        } catch { /* try next peer */ }
+      }
+    } catch { /* ignore */ }
+    return null;
+  }
+
   // Capability-matched sibling of _relayToPeerChat/_relayToPeerForDataset: used
   // when THIS node's own embedding model isn't installed, so a caller isn't
   // stuck waiting on a multi-GB on-demand download. Only peers self-reporting
@@ -8768,8 +8820,20 @@ export class DAIMinerNode {
 
     // ── Skill job path ────────────────────────────────────────────────────────
     if (job.type === 'skill' && job.skillId) {
-      // Gate: skill must be enabled on this node
+      // Gate: skill must be enabled on this node. Before giving up, try a peer
+      // that self-reports it enabled (see _relayToPeerForSkill) — skip that
+      // for a job already relayed here, so a skill nobody truly has enabled
+      // can't bounce node to node instead of just failing.
       if (!this.isSkillEnabled(job.skillId)) {
+        if (!job._relayed) {
+          const peerResult = await this._relayToPeerForSkill(job).catch(() => null);
+          if (peerResult) {
+            console.log(`[DAI-Miner] Skill job ${job.id} (${job.skillId}) relayed to a peer that has it enabled`);
+            this._updateJob(job.id, { status: 'done', result: peerResult, _fromPeer: true });
+            if (!this.jobQueue.completed.has(job.id)) this.jobQueue.markCompleted(job.id);
+            return;
+          }
+        }
         console.log(`[DAI-Miner] Skipping skill job ${job.id} — skill ${job.skillId} is disabled on this node`);
         this._updateJob(job.id, { status: 'ignored', error: 'skill disabled by miner' });
         return;
