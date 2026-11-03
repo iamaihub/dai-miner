@@ -4366,19 +4366,18 @@ export class DAIMinerNode {
           const brainDir = getBrainDataDir();
           if (!brainDir) { res.statusCode = 500; res.end(JSON.stringify({ error: 'brain data dir unavailable' })); return; }
           (async () => {
-            let body = '';
-            req.on('data', c => { body += c; });
-            req.on('end', async () => {
+            try {
+              let pipelineTag;
               try {
-                let pipelineTag;
-                try { pipelineTag = body ? JSON.parse(body).pipelineTag : undefined; } catch { /* no body */ }
-                const manifest = await hfModelManager.registerInstalled(brainDir, modelId, { pipelineTag });
-                res.end(JSON.stringify({ ok: true, manifest }));
-              } catch (e) {
-                res.statusCode = 502;
-                res.end(JSON.stringify({ error: e.message }));
-              }
-            });
+                const raw = await readLimitedBody(req, 4 * 1024);
+                pipelineTag = raw ? JSON.parse(raw).pipelineTag : undefined;
+              } catch { /* no/invalid body — fall back to the Hugging Face lookup */ }
+              const manifest = await hfModelManager.registerInstalled(brainDir, modelId, { pipelineTag });
+              res.end(JSON.stringify({ ok: true, manifest }));
+            } catch (e) {
+              res.statusCode = 502;
+              res.end(JSON.stringify({ error: e.message }));
+            }
           })();
           return;
         }
@@ -7688,12 +7687,24 @@ export class DAIMinerNode {
       const peers = await this._peersWithStatus(s => s?.enabledSkillIds?.includes(job.skillId));
       if (!peers.length) return null;
 
+      // Same signed-relay-proof shape as _relayJobToPeers: 'skill' is a
+      // FEE_REQUIRED_JOB_TYPES type, so without this the receiving peer's
+      // /job handler finds trustedRelay === false and demands a fresh
+      // paymentTx signed for ITS OWN wallet — which the original requester
+      // never produced (their payment was for THIS node's wallet) — and
+      // rejects every relay attempt with 402/403. The proof tells the peer
+      // the fee was already verified/escrowed upstream, by a node it already
+      // recognizes as a peer (matched by remote IP, not by this payload).
+      const relayPayload = { jobId: job.id, maxBudget: job.maxBudget, requesterAddress: job.requesterAddress, type: job.type };
+      const relayProof = this.identityWallet?.sign ? this.identityWallet.sign(JSON.stringify(relayPayload)) : null;
+      const relaySigner = this.identityWallet?.signingPublicKey || null;
+
       for (const base of peers) {
         try {
           const posted = await fetch(`${base}/job`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...job, _relayed: true }),
+            body: JSON.stringify({ ...job, _relayed: true, _relayPayload: relayPayload, _relayProof: relayProof, _relaySigner: relaySigner }),
             signal: AbortSignal.timeout(8000),
           });
           if (!posted.ok) continue;

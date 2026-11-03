@@ -25,6 +25,7 @@ describe('_relayToPeerForSkill', () => {
     realFetch = global.fetch;
     const n = node({
       _getComputePeers: vi.fn().mockResolvedValue(['http://peer-a:3456', 'http://peer-b:3456']),
+      identityWallet: { signingPublicKey: 'sender-pub', sign: (s) => `sig(${s})` },
     });
     const posted = [];
     let polls = 0;
@@ -46,13 +47,38 @@ describe('_relayToPeerForSkill', () => {
       throw new Error(`unexpected fetch: ${u}`);
     });
 
-    const result = await n._relayToPeerForSkill({ id: 'job-1', type: 'skill', skillId: 'read_farcaster' });
+    const result = await n._relayToPeerForSkill({ id: 'job-1', type: 'skill', skillId: 'read_farcaster', maxBudget: 500, requesterAddress: 'dai_req' });
 
     expect(posted).toHaveLength(1);
     expect(posted[0]._relayed).toBe(true);
     expect(posted[0].skillId).toBe('read_farcaster');
     expect(result.verdict).toBe('SKILL_RESULT');
+
+    // 'skill' is a FEE_REQUIRED_JOB_TYPES type: without a signed relay proof the
+    // receiving peer's /job handler treats this as untrusted and demands a fresh
+    // paymentTx for ITS OWN wallet, which the original requester never signed —
+    // every relay would 402/403. The proof is what lets the peer trust that the
+    // fee was already verified/escrowed upstream (see _relayJobToPeers for the
+    // same shape used by the pre-existing geo/competition relay).
+    expect(posted[0]._relayPayload).toEqual({ jobId: 'job-1', maxBudget: 500, requesterAddress: 'dai_req', type: 'skill' });
+    expect(posted[0]._relayProof).toBe(`sig(${JSON.stringify(posted[0]._relayPayload)})`);
+    expect(posted[0]._relaySigner).toBe('sender-pub');
   }, 10_000);
+
+  it('still relays (with a null proof) when this node has no identityWallet, rather than throwing', async () => {
+    realFetch = global.fetch;
+    const n = node({ _getComputePeers: vi.fn().mockResolvedValue(['http://peer-a:3456']) });
+    const posted = [];
+    global.fetch = vi.fn(async (url, opts) => {
+      const u = String(url);
+      if (u.endsWith('/status')) return { ok: true, json: async () => ({ enabledSkillIds: ['read_farcaster'] }) };
+      if (u === 'http://peer-a:3456/job') { posted.push(JSON.parse(opts.body)); return { ok: true }; }
+      if (u === 'http://peer-a:3456/job/job-1/result') return { status: 200, json: async () => ({ verdict: 'SKILL_RESULT' }) };
+      throw new Error(`unexpected fetch: ${u}`);
+    });
+    await n._relayToPeerForSkill({ id: 'job-1', type: 'skill', skillId: 'read_farcaster' });
+    expect(posted[0]._relayProof).toBeNull();
+  });
 
   it('returns null when no peer has the skill enabled', async () => {
     realFetch = global.fetch;
