@@ -106,8 +106,15 @@ export function searchCards(cards, query, k = 8) {
       if (!t) continue;
       if (q.includes(t)) score += t.trim().split(/\s+/).length * 3;
     }
+    // Word-boundary match, not raw substring: a short term like "ok" is a real
+    // word, not a stopword, so it isn't filtered above — but `blob.includes(t)`
+    // would then match it inside unrelated words too (e.g. avalanche's
+    // "rpc_lookup_method" tool name, or ai-portal's "GenAI glossary lookup"
+    // summary both contain "ok" as a substring of "lookup", with zero semantic
+    // relation to the query).
     const blob = `${c.id} ${c.mcpId} ${c.tool} ${c.summary} ${(c.tags || []).join(' ')} ${(c.tools || []).join(' ')}`.toLowerCase();
-    for (const t of terms) if (blob.includes(t)) score += 1;
+    const blobWords = new Set(blob.split(/[^a-z0-9]+/i).filter(Boolean));
+    for (const t of terms) if (blobWords.has(t)) score += 1;
     if (c.tags?.some(tag => q.includes(String(tag).toLowerCase()))) score += 2;
     if (score > 0) scored.push({ card: c, score });
   }
