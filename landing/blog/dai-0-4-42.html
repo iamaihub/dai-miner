@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DAI 0.4.42 — your miner just learned to ask for help</title>
+  <meta name="description" content="DAI 0.4.42: your miner can now lean on a nearby miner when it's missing a capability, Thermopolium joins the network as a paid Solana-metered compute source, SICI and iamai.kg join as new default MCPs, the core AI engine got a real upgrade, and a number of smaller fixes.">
+  <meta property="og:title" content="DAI 0.4.42 — your miner just learned to ask for help">
+  <meta property="og:description" content="Capability-aware peer relay for embeddings, Thermopolium joins the network, SICI and iamai.kg become default MCPs, and a core AI engine upgrade — plus smaller fixes.">
+  <meta property="og:type" content="article">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Iceland&family=Noto+Sans:wght@400;600&family=Noto+Sans+SC:wght@400;600&family=Noto+Sans+HK:wght@400;600&family=Noto+Sans+Arabic:wght@400;600&family=Noto+Sans+Bengali:wght@400;600&family=Noto+Sans+Ethiopic:wght@400;600&family=Noto+Serif+Tibetan:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/svg+xml" href="../dai-miner-on-light.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="../favicon-32.png">
+  <link rel="shortcut icon" href="../favicon.ico">
+  <script src="../i18n.js" defer></script>
+  <style>
+    :root { --bg: #f5f6f2; --ink: #171717; --muted: #525252; --accent: #16a34a; --card: #ffffff; --line: #e4e6e0; }
+    body { font-family: 'Iceland', sans-serif; background: var(--bg); color: var(--ink); line-height: 1.4; }
+    h1, h2, h3, .font-display { font-family: 'Iceland', sans-serif; font-weight: 400; }
+    .neon { color: #16a34a; }
+    .muted { color: var(--muted); }
+    html { font-size: 150%; }
+    @media (max-width: 767px) { html { font-size: 110%; } }
+    @media (max-width: 639px) { html { font-size: 100%; } }
+    /* Iceland has no non-Latin glyphs. Without a real fallback font those
+       scripts render in the browser's generic sans-serif — a different,
+       visibly larger typeface next to Latin text like "DAI SICI" in the nav.
+       Give each script group its own Noto fallback (loaded above) at a
+       matched weight, for both the root text and the headings, which set
+       their own font-family explicitly and so don't inherit from html. */
+    html:lang(ru), html:lang(ky) { font-family: 'Iceland', 'Noto Sans', sans-serif; }
+    html:lang(zh) { font-family: 'Iceland', 'Noto Sans SC', 'Noto Sans HK', sans-serif; }
+    html:lang(ar), html:lang(fa), html:lang(ur) { font-family: 'Iceland', 'Noto Sans Arabic', sans-serif; }
+    html:lang(bn) { font-family: 'Iceland', 'Noto Sans Bengali', sans-serif; }
+    html:lang(am) { font-family: 'Iceland', 'Noto Sans Ethiopic', sans-serif; }
+    html:lang(dz) { font-family: 'Iceland', 'Noto Serif Tibetan', sans-serif; }
+    html:lang(ru) h1, html:lang(ru) h2, html:lang(ru) h3, html:lang(ru) .font-display,
+    html:lang(ky) h1, html:lang(ky) h2, html:lang(ky) h3, html:lang(ky) .font-display {
+      font-family: 'Iceland', 'Noto Sans', sans-serif; font-weight: 600;
+    }
+    html:lang(zh) h1, html:lang(zh) h2, html:lang(zh) h3, html:lang(zh) .font-display {
+      font-family: 'Iceland', 'Noto Sans SC', 'Noto Sans HK', sans-serif; font-weight: 600;
+    }
+    html:lang(ar) h1, html:lang(ar) h2, html:lang(ar) h3, html:lang(ar) .font-display,
+    html:lang(fa) h1, html:lang(fa) h2, html:lang(fa) h3, html:lang(fa) .font-display,
+    html:lang(ur) h1, html:lang(ur) h2, html:lang(ur) h3, html:lang(ur) .font-display {
+      font-family: 'Iceland', 'Noto Sans Arabic', sans-serif; font-weight: 600;
+    }
+    html:lang(bn) h1, html:lang(bn) h2, html:lang(bn) h3, html:lang(bn) .font-display {
+      font-family: 'Iceland', 'Noto Sans Bengali', sans-serif; font-weight: 600;
+    }
+    html:lang(am) h1, html:lang(am) h2, html:lang(am) h3, html:lang(am) .font-display {
+      font-family: 'Iceland', 'Noto Sans Ethiopic', sans-serif; font-weight: 600;
+    }
+    html:lang(dz) h1, html:lang(dz) h2, html:lang(dz) h3, html:lang(dz) .font-display {
+      font-family: 'Iceland', 'Noto Serif Tibetan', sans-serif; font-weight: 600;
+    }
+    /* Iceland's chunky geometric forms don't exist for these scripts, so a
+       fallback font at the same font-size reads visibly larger — scale down
+       to compensate. */
+    html:lang(ru), html:lang(ky), html:lang(zh), html:lang(ar), html:lang(fa),
+    html:lang(bn), html:lang(ur), html:lang(am), html:lang(dz) { font-size: 135%; }
+    @media (max-width: 767px) {
+      html:lang(ru), html:lang(ky), html:lang(zh), html:lang(ar), html:lang(fa),
+      html:lang(bn), html:lang(ur), html:lang(am), html:lang(dz) { font-size: 100%; }
+    }
+    @media (max-width: 639px) {
+      html:lang(ru), html:lang(ky), html:lang(zh), html:lang(ar), html:lang(fa),
+      html:lang(bn), html:lang(ur), html:lang(am), html:lang(dz) { font-size: 91%; }
+    }
+    .footer-text { font-size: 1.25rem !important; }
+
+    .nav-links { display: none; }
+    @media (min-width: 1024px) { .nav-links { display: flex; } }
+    .hamburger { display: flex; flex-direction: column; gap: 5px; cursor: pointer; padding: 4px; }
+    .hamburger span { display: block; width: 22px; height: 2px; background: #171717; border-radius: 2px; transition: 0.25s; }
+    .hamburger.open span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+    .hamburger.open span:nth-child(2) { opacity: 0; }
+    .hamburger.open span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+    @media (min-width: 1024px) { .hamburger { display: none; } }
+    .mobile-drawer {
+      display: none; position: fixed; top: 64px; left: 0; right: 0; z-index: 49;
+      background: #f5f6f2; border-bottom: 1px solid var(--line);
+      flex-direction: column; padding: 16px 24px 24px;
+    }
+    @media (min-width: 640px) { .mobile-drawer { top: 80px; } }
+    .mobile-drawer.open { display: flex; }
+    .mobile-drawer a { padding: 14px 0; font-size: 22px; color: #171717; border-bottom: 1px solid var(--line); text-decoration: none; }
+    .mobile-drawer a:last-child { border-bottom: none; }
+    @media (min-width: 1024px) { .mobile-drawer { display: none !important; } }
+    .dai-lang-select { background: #fff !important; color: #171717 !important; border: 1px solid #d4d6d0 !important; }
+
+    .prose p { font-size: 1.18rem; line-height: 1.55; margin-bottom: 1rem; color: #262626; }
+    .prose p:last-child { margin-bottom: 0; }
+    .prose strong { color: var(--ink); }
+    .prose ul, .prose ol { margin: 0.35rem 0 1.1rem; padding-inline-start: 1.35rem; }
+    .prose li { font-size: 1.18rem; line-height: 1.5; margin-bottom: 0.55rem; color: #262626; }
+    .prose li:last-child { margin-bottom: 0; }
+    .lede { font-size: 1.5rem !important; line-height: 1.4 !important; color: var(--ink) !important; }
+
+    .meta { font-size: 0.92rem; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); }
+    .tag {
+      display: inline-block; border: 1px solid var(--line); border-radius: 999px;
+      padding: 2px 12px; font-size: 0.9rem; color: var(--accent);
+      background: rgba(22,163,74,0.07);
+    }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.86em; }
+
+    .jump { display: flex; align-items: baseline; flex-wrap: wrap; gap: 12px; }
+    .jump .from { font-size: 2rem; color: var(--muted); }
+    .jump .arrow { color: var(--accent); font-size: 1.4rem; }
+    .jump .to { font-size: 3.2rem; }
+
+    .item { border-top: 1px solid var(--line); padding: 2.4rem 0; }
+    .item-head { display: flex; gap: 1.1rem; align-items: baseline; }
+    .rank { font-size: 3rem; line-height: 1; color: var(--accent); min-width: 2.6rem; }
+    .item h2 { font-size: 2.1rem; line-height: 1.05; }
+    .kicker { font-size: 0.85rem; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+    @media (min-width: 768px) { .item-body { padding-inline-start: 3.7rem; } }
+    @media (max-width: 767px) {
+      .item-head { display: block; }
+      .rank { font-size: 2.2rem; margin-bottom: 2px; }
+    }
+
+    .pull {
+      border-inline-start: 3px solid var(--accent); padding-inline-start: 1rem;
+      font-size: 1.35rem !important; line-height: 1.35 !important; color: var(--ink) !important;
+      margin: 1.3rem 0 !important;
+    }
+
+    .cmd {
+      border: 1px solid var(--line); background: var(--card); border-radius: 4px;
+      padding: 12px 16px; overflow-x: auto; white-space: nowrap;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.92rem; color: #333;
+    }
+    .cmd .p { color: var(--accent); user-select: none; }
+  </style>
+</head>
+<body>
+
+  <nav class="border-b border-black/10 bg-[#f5f6f2]/85 backdrop-blur-xl fixed w-full z-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-8 h-16 sm:h-20 flex items-center justify-between">
+      <a href="../index.html" class="flex items-center gap-2">
+        <img src="../dai-miner-on-light.svg" alt="DAI Logo" width="36" height="36" class="sm:w-[48px] sm:h-[48px]" style="vertical-align: middle;" />
+      </a>
+      <div class="nav-links items-center gap-x-6 xl:gap-x-9 text-[17px] xl:text-[20px]">
+        <a href="../dai.html" class="hover:text-[#16a34a] transition whitespace-nowrap" data-i18n="nav.dai">DAI</a>
+        <a href="/sici/" class="hover:text-[#16a34a] transition whitespace-nowrap" data-i18n="nav.sici">SICI</a>
+        <a href="../framework.html" class="hover:text-[#16a34a] transition whitespace-nowrap" data-i18n="nav.framework">Framework</a>
+        <a href="../wallet/" class="hover:text-[#16a34a] transition whitespace-nowrap" data-i18n="nav.wallet">Wallet</a>
+        <a href="../explorer/" class="hover:text-[#16a34a] transition whitespace-nowrap" data-i18n="nav.explorer">Explorer</a>
+        <a href="./" class="text-[#16a34a] transition whitespace-nowrap" data-i18n="nav.blog">Blog</a>
+        <div data-i18n-switch></div>
+      </div>
+      <button class="hamburger" id="hamburger" aria-label="Open menu"><span></span><span></span><span></span></button>
+    </div>
+  </nav>
+
+  <div class="mobile-drawer" id="mobile-drawer">
+    <a href="../dai.html" data-i18n="nav.dai">DAI</a>
+    <a href="/sici/" data-i18n="nav.sici">SICI</a>
+    <a href="../framework.html" data-i18n="nav.framework">Framework</a>
+    <a href="../wallet/" data-i18n="nav.wallet">Wallet</a>
+    <a href="../explorer/" data-i18n="nav.explorer">Explorer</a>
+    <a href="./" data-i18n="nav.blog">Blog</a>
+    <div data-i18n-switch style="padding:14px 0"></div>
+  </div>
+
+  <main class="pt-16 sm:pt-20">
+    <article class="max-w-3xl mx-auto px-4 sm:px-8">
+      <header class="pt-10 sm:pt-16 pb-6">
+        <a href="./" class="meta hover:text-[#16a34a]" data-i18n="blog.back">← Blog</a>
+        <div class="flex flex-wrap items-center gap-3 mt-6 mb-5">
+          <span class="tag" data-i18n="blog.tag.release">Release</span>
+          <span class="meta" data-i18n="blog.p6.date">4 November 2026 · v0.4.42</span>
+        </div>
+        <h1 class="text-[42px] sm:text-[64px] leading-[0.98]" data-i18n-html="blog.p6.title">
+          Your miner just learned to <span class="neon">ask for help</span>.
+        </h1>
+        <div class="prose mt-6">
+          <p class="lede" data-i18n="blog.v42.lede">
+            A release about teamwork. Your miner can now lean on a nearby miner when it's missing a
+            capability instead of stalling, two new places joined its toolbox for looking things up, a paid
+            compute marketplace is now reachable from inside the app, and the core AI engine itself got a
+            real upgrade.
+          </p>
+        </div>
+
+        <div class="jump mt-9 pt-6 border-t border-black/10">
+          <span class="from">0.4.40</span>
+          <span class="arrow">→</span>
+          <span class="to">0.4.42</span>
+          <span class="meta ml-auto" style="text-transform:none;letter-spacing:0.5px" data-i18n="blog.v42.span">
+            Four real upgrades, no setup required
+          </span>
+        </div>
+      </header>
+
+      <section class="item">
+        <div class="item-head">
+          <div class="rank">01</div>
+          <div>
+            <div class="kicker" data-i18n="blog.v42.s1.k">Teamwork</div>
+            <h2 data-i18n="blog.v42.s1.h">When your miner can't do something alone, it now asks a neighbor</h2>
+          </div>
+        </div>
+        <div class="item-body prose mt-5">
+          <p data-i18n="blog.v42.s1.p1">Some of what your miner's assistant does behind the scenes — like figuring out which of its tools best matches what you actually asked — relies on a specific AI skill called an "embedding model." Not every miner has that skill installed; it's one of several optional engines, and downloading one just to answer a single question would be slow and wasteful.</p>
+          <p data-i18n="blog.v42.s1.p2">Now, if your own miner doesn't have it, it automatically asks a nearby miner on the network that does, gets the answer, and carries on. You don't do anything differently — it's invisible unless you go looking for it.</p>
+          <p class="pull" data-i18n="blog.v42.s1.pull">If your miner can't do something itself, its first move is now to ask around — not to give up.</p>
+        </div>
+      </section>
+
+      <section class="item">
+        <div class="item-head">
+          <div class="rank">02</div>
+          <div>
+            <div class="kicker" data-i18n="blog.v42.s2.k">New MCP</div>
+            <h2 data-i18n="blog.v42.s2.h">Thermopolium joins the network — paid compute, metered in Solana THERM</h2>
+          </div>
+        </div>
+        <div class="item-body prose mt-5">
+          <p data-i18n="blog.v42.s2.p1">Thermopolium is a separate marketplace for AI compute, priced and paid for in THERM, a token on Solana. Your miner's assistant can now reach it directly from inside a normal conversation: get a quote for a task, pay for exactly that task, and get the result back.</p>
+          <p data-i18n="blog.v42.s2.p2">It's entirely optional and only used when it actually makes sense — most of what your miner does for you still runs for free, on its own hardware, or on the DAI network itself.</p>
+          <p class="pull" data-i18n="blog.v42.s2.pull">One more source of answers, paid for only when it's actually used.</p>
+        </div>
+      </section>
+
+      <section class="item">
+        <div class="item-head">
+          <div class="rank">03</div>
+          <div>
+            <div class="kicker" data-i18n="blog.v42.s3.k">New MCP</div>
+            <h2 data-i18n="blog.v42.s3.h">Two new places your assistant can look things up: SICI and iamai.kg itself</h2>
+          </div>
+        </div>
+        <div class="item-body prose mt-5">
+          <p data-i18n-html="blog.v42.s3.p1"><strong>SICI</strong> (from COMPEX) is now one of the places your miner's assistant can ask for help directly — quoting and running multi-provider sequences, checking fund status, and more, all from inside a normal conversation.</p>
+          <p data-i18n-html="blog.v42.s3.p2">And <strong>iamai.kg</strong> — the project behind DAI — is now a source your assistant can ask about itself: what's deployed where, what changed in each release, and which other tools are available on the network. Ask your miner how DAI actually works, and for the first time, it can go check.</p>
+          <p class="pull" data-i18n="blog.v42.s3.pull">Your assistant can now answer questions about the DAI project the same way it answers everything else — by actually looking.</p>
+        </div>
+      </section>
+
+      <section class="item">
+        <div class="item-head">
+          <div class="rank">04</div>
+          <div>
+            <div class="kicker" data-i18n="blog.v42.s4.k">Under the hood</div>
+            <h2 data-i18n="blog.v42.s4.h">A faster, more capable AI engine — upgraded for every miner</h2>
+          </div>
+        </div>
+        <div class="item-body prose mt-5">
+          <p data-i18n="blog.v42.s4.p1">The core engine that runs the AI models on your machine got a meaningful upgrade. It's not the kind of change you'll find a button for, but you'll feel it: quicker responses, and a more capable engine doing the work behind every answer.</p>
+          <p data-i18n="blog.v42.s4.p2">We rolled it out carefully and double-checked it was solid before shipping it network-wide — the kind of caution a change at this level deserves.</p>
+          <p class="pull" data-i18n="blog.v42.s4.pull">Same miner, same setup — just a stronger engine doing the work.</p>
+        </div>
+      </section>
+
+      <section class="pt-10 pb-4">
+        <h2 class="text-[2.1rem] leading-tight" data-i18n="blog.v42.also.h">Also in this release</h2>
+        <p class="muted text-[1.1rem] mt-1" data-i18n="blog.v42.also.sub">A number of smaller fixes and improvements you won't need to think about.</p>
+      </section>
+
+      <section class="py-10 sm:py-14 border-t border-black/10">
+        <h2 class="text-[2.4rem] sm:text-[3rem] leading-[1.02]" data-i18n="blog.cta.h">Put an idle computer to work</h2>
+        <p class="muted text-[1.2rem] mt-3 max-w-xl" data-i18n="blog.cta.p">A Mac mini, an old gaming PC, a server with spare hours. Download it, pick a model, and it starts earning while you get on with your day.</p>
+        <div class="flex flex-wrap gap-3 mt-7 items-center">
+          <a href="../miner.html#start" class="px-6 py-3 rounded-[4px] bg-[#16a34a] text-white text-[1.25rem] hover:bg-black transition" data-i18n="blog.cta.b1">Download DAI Miner →</a>
+          <a href="../docs/" class="px-6 py-3 rounded-[4px] border border-[#16a34a] text-[#16a34a] text-[1.25rem] hover:bg-[#16a34a] hover:text-white transition" data-i18n="blog.cta.b2">Read the docs</a>
+        </div>
+        <div class="cmd mt-6"><span class="p">$</span> curl -fsSL https://miner.iamai.kg/scripts/easy-start.sh | bash</div>
+      </section>
+    </article>
+  </main>
+
+  <footer class="border-t border-black/10 py-8 footer-text muted">
+    <div class="max-w-7xl mx-auto px-4 sm:px-8 flex flex-col sm:flex-row gap-2 sm:justify-between">
+      <div data-i18n="idx.foot.tag">DAI — Decentralized AI compute, powered by local LLMs</div>
+      <div class="flex gap-x-4 gap-y-2 flex-wrap">
+        <a href="../miner.html" class="hover:text-[#171717]" data-i18n="idx.foot.miner">DAI Miner</a>
+        <a href="../wallet/" class="hover:text-[#171717]" data-i18n="nav.wallet">Wallet</a>
+        <a href="../docs/" class="hover:text-[#171717]" data-i18n="idx.foot.docs">Docs</a>
+        <a href="../explorer/" class="hover:text-[#171717]" data-i18n="nav.explorer">Explorer</a>
+        <a href="./" class="hover:text-[#171717]" data-i18n="nav.blog">Blog</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    const hamburger = document.getElementById('hamburger');
+    const drawer = document.getElementById('mobile-drawer');
+    if (hamburger && drawer) {
+      hamburger.addEventListener('click', () => { hamburger.classList.toggle('open'); drawer.classList.toggle('open'); });
+      drawer.querySelectorAll('a').forEach(a => a.addEventListener('click', () => { hamburger.classList.remove('open'); drawer.classList.remove('open'); }));
+    }
+  </script>
+</body>
+</html>
