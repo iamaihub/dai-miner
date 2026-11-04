@@ -65,7 +65,7 @@
   ],
   "license": "MIT",
   "devDependencies": {
-    "@qvac/cli": "^0.16.0",
+    "@qvac/cli": "^0.18.0",
     "@yao-pkg/pkg": "^5.8.1",
     "electron": "^44.9.3",
     "electron-builder": "^24.13.3",
@@ -87,7 +87,7 @@
     "qrcode": "^1.5.4"
   },
   "optionalDependencies": {
-    "@qvac/sdk": "^0.22.0"
+    "@qvac/sdk": "^0.23.0"
   },
   "build": {
     "appId": "kg.iamai.daiminer",
@@ -114,6 +114,7 @@
       "!node_modules/@qvac/translation-nmtcpp/prebuilds/**/*",
       "!node_modules/@qvac/tts-ggml-linux-x64/prebuilds/**/*",
       "!node_modules/@qvac/vla-ggml/prebuilds/**/*",
+      "!node_modules/@qvac/turbovec-ggml/prebuilds/**/*",
       "!node_modules/@qvac/*/prebuilds/android-*/**/*",
       "!node_modules/@qvac/*/prebuilds/ios-*/**/*"
     ],
