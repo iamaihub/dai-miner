@@ -3,12 +3,16 @@ import { JobBoard } from '../src/jobs/job-board.js';
 import { Wallet } from '../src/wallet/wallet.js';
 import { computeBoardJobPaymentHash } from '../src/jobs/board-payment.js';
 
+// A free board job is an identity scan. A short fake address is not one.
+const ADDR = '0x0000000000000000000000000000000000000001';
+const freeScan = (extra = {}) => ({ type: 'verdict', payload: { address: ADDR }, ...extra });
+
 describe('JobBoard', () => {
   let board;
   beforeEach(() => { board = new JobBoard({ leaseMs: 50 }); });
 
   it('submits and lists open jobs', () => {
-    const { jobId } = board.submit({ type: 'verdict', payload: { address: 'bc1qtest' } });
+    const { jobId } = board.submit(freeScan());
     expect(jobId).toBeTruthy();
     const open = board.listOpen();
     expect(open).toHaveLength(1);
@@ -16,13 +20,13 @@ describe('JobBoard', () => {
   });
 
   it('is idempotent on resubmit with same id', () => {
-    board.submit({ id: 'j1', type: 'verdict' });
-    board.submit({ id: 'j1', type: 'verdict' });
+    board.submit(freeScan({ id: 'j1' }));
+    board.submit(freeScan({ id: 'j1' }));
     expect(board.stats().total).toBe(1);
   });
 
   it('claim transitions open → claimed and removes from open list', () => {
-    const { jobId } = board.submit({ id: 'j1', type: 'verdict' });
+    const { jobId } = board.submit(freeScan({ id: 'j1' }));
     const r = board.claim(jobId, 'daiworker1');
     expect(r.job.id).toBe(jobId);
     expect(board.listOpen()).toHaveLength(0);
@@ -30,14 +34,14 @@ describe('JobBoard', () => {
   });
 
   it('rejects a second claim while lease is active', () => {
-    board.submit({ id: 'j1' });
+    board.submit(freeScan({ id: 'j1' }));
     board.claim('j1', 'workerA');
     const r = board.claim('j1', 'workerB');
     expect(r.error).toMatch(/already claimed/);
   });
 
   it('keeps a finished job until a block includes it', () => {
-    board.submit({ id: 'j1', type: 'verdict' });
+    board.submit(freeScan({ id: 'j1' }));
     board.claim('j1', 'workerA');
     expect(board.postResult('j1', 'workerA', { verdict: 'OK' }).ok).toBe(true);
     const start = Date.now();
@@ -55,7 +59,7 @@ describe('JobBoard', () => {
   });
 
   it('reclaims a job after the lease expires', async () => {
-    board.submit({ id: 'j1' });
+    board.submit(freeScan({ id: 'j1' }));
     board.claim('j1', 'workerA');
     await new Promise(r => setTimeout(r, 70)); // > leaseMs
     expect(board.listOpen().map(j => j.id)).toContain('j1');
@@ -64,14 +68,14 @@ describe('JobBoard', () => {
   });
 
   it('only the claimer can post a result', () => {
-    board.submit({ id: 'j1' });
+    board.submit(freeScan({ id: 'j1' }));
     board.claim('j1', 'workerA');
     expect(board.postResult('j1', 'workerB', { verdict: 'HUMAN' }).error).toMatch(/another worker/);
     expect(board.postResult('j1', 'workerA', { verdict: 'HUMAN' })).toEqual({ ok: true });
   });
 
   it('exposes result via get() and marks done', () => {
-    board.submit({ id: 'j1' });
+    board.submit(freeScan({ id: 'j1' }));
     board.claim('j1', 'workerA');
     board.postResult('j1', 'workerA', { verdict: 'HUMAN', confidence: 0.9 });
     const s = board.get('j1');
@@ -81,7 +85,7 @@ describe('JobBoard', () => {
   });
 
   it('surfaces completed results as pending for proposers, then clears them', () => {
-    board.submit({ id: 'j1' });
+    board.submit(freeScan({ id: 'j1' }));
     board.claim('j1', 'w');
     board.postResult('j1', 'w', { verdict: 'AI' });
     let pending = board.pendingResults();
@@ -99,8 +103,10 @@ describe('JobBoard', () => {
   it('rejects fee-required jobs without a payment proof', () => {
     expect(board.submit({ type: 'skill', skillId: 'x' }).error).toMatch(/paymentTx/);
     expect(board.submit({ type: 'compute', model: 'm' }).error).toMatch(/paymentTx/);
-    // verdict (free) needs no payment
-    expect(board.submit({ type: 'verdict' }).jobId).toBeTruthy();
+    // A verdict with no address or domain is compute, so it is not free.
+    expect(board.submit({ type: 'verdict' }).error).toMatch(/paymentTx/);
+    expect(board.submit(freeScan()).jobId).toBeTruthy();
+    expect(board.submit({ type: 'verdict', payload: { address: 'vitalik.eth' } }).jobId).toBeTruthy();
   });
 
   it('rejects a fee job with a garbage payment proof', () => {
@@ -126,12 +132,12 @@ describe('JobBoard', () => {
     board.claim(jobId, 'wkr');
     board.postResult(jobId, 'wkr', { type: 'skill', output: 42 });
     const [p] = board.takePendingResults();
-    expect(p).toMatchObject({ jobId, worker: 'wkr', jobType: 'skill', requesterAddress: w.address, maxBudget });
+    expect(p).toMatchObject({ jobId, worker: 'wkr', jobType: 'compute', skillId: 'x', requesterAddress: w.address, maxBudget });
     expect(p.paymentTx.nonce).toBe(nonce);
   });
 
   it('takePendingResults leases a handed-out result (not re-offered within the lease)', () => {
-    board.submit({ id: 'j1' }); board.claim('j1', 'w'); board.postResult('j1', 'w', { verdict: 'HUMAN' });
+    board.submit(freeScan({ id: 'j1' })); board.claim('j1', 'w'); board.postResult('j1', 'w', { verdict: 'HUMAN' });
     expect(board.takePendingResults()).toHaveLength(1);
     expect(board.takePendingResults()).toHaveLength(0);           // leased to the first proposer
     board.markResultsIncluded(['j1']);
@@ -142,9 +148,9 @@ describe('JobBoard', () => {
 describe('JobBoard — fairness (every node sees & gets work)', () => {
   it('region is a soft preference, never a filter — all nodes see all jobs', () => {
     const board = new JobBoard();
-    board.submit({ id: 'ge', type: 'verdict', originCountry: 'GE' });
-    board.submit({ id: 'hk', type: 'verdict', originCountry: 'HK' });
-    board.submit({ id: 'any', type: 'verdict' }); // untagged
+    board.submit(freeScan({ id: 'ge', originCountry: 'GE' }));
+    board.submit(freeScan({ id: 'hk', originCountry: 'HK' }));
+    board.submit(freeScan({ id: 'any' })); // untagged
 
     // A worker in HK still sees every job (not just HK), with its region first.
     const seen = board.listOpen({ region: 'HK' }).map(j => j.id);
@@ -159,8 +165,8 @@ describe('JobBoard — fairness (every node sees & gets work)', () => {
 
   it('in-flight cap: a worker holding an unfinished job cannot claim another', () => {
     const board = new JobBoard({ claimCooldownMs: 0 }); // isolate the cap from the cooldown
-    board.submit({ id: 'a' });
-    board.submit({ id: 'b' });
+    board.submit(freeScan({ id: 'a' }));
+    board.submit(freeScan({ id: 'b' }));
 
     expect(board.claim('a', 'hog').job.id).toBe('a');
     const second = board.claim('b', 'hog');
@@ -172,14 +178,14 @@ describe('JobBoard — fairness (every node sees & gets work)', () => {
 
     // Once 'hog' finishes 'a', it may claim again.
     board.postResult('a', 'hog', { verdict: 'HUMAN' });
-    board.submit({ id: 'c' });
+    board.submit(freeScan({ id: 'c' }));
     expect(board.claim('c', 'hog').job.id).toBe('c');
   });
 
   it('post-claim cooldown: fast poller yields the next job to a peer', async () => {
     const board = new JobBoard({ claimCooldownMs: 60 });
-    board.submit({ id: 'a' });
-    board.submit({ id: 'b' });
+    board.submit(freeScan({ id: 'a' }));
+    board.submit(freeScan({ id: 'b' }));
 
     // hk claims 'a', finishes it immediately, then races for 'b' during cooldown.
     expect(board.claim('a', 'hk').job.id).toBe('a');
@@ -190,13 +196,13 @@ describe('JobBoard — fairness (every node sees & gets work)', () => {
 
     // After the cooldown a lone worker is never starved — it can claim again.
     await new Promise(r => setTimeout(r, 80));
-    board.submit({ id: 'c' });
+    board.submit(freeScan({ id: 'c' }));
     expect(board.claim('c', 'hk').job.id).toBe('c');
   });
 
   it('idempotent re-claim of a held job does not trip the cooldown or cap', () => {
     const board = new JobBoard({ claimCooldownMs: 60 });
-    board.submit({ id: 'a' });
+    board.submit(freeScan({ id: 'a' }));
     expect(board.claim('a', 'w').job.id).toBe('a');
     // Re-claiming the same job the worker already holds just renews the lease.
     expect(board.claim('a', 'w').job.id).toBe('a');

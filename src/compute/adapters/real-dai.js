@@ -205,6 +205,9 @@ async function loadRealDAIModules() {
 export async function computeWithRealDai(job, config) {
   const start = Date.now();
   const address = job.payload?.address || job.address;
+  if (typeof address !== 'string' || !address.trim()) {
+    throw new Error('payload.address is required for an identity scan (wallet address or web3 domain)');
+  }
 
   // Pin the QVAC model the brain should use, BEFORE loading brain/checker
   // (brain.js reads these role env vars as consts at require() time). With one

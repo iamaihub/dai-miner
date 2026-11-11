@@ -119,12 +119,14 @@ export class SkillsManager {
   }
 
   getSkill(skillId) {
+    if (skillId === 'poh_identity') skillId = 'dai_identity';
     return this._skills.get(skillId) || null;
   }
 
   // ── Sandboxed execution ───────────────────────────────────────────────────
 
   async runSkill(skillId, input, config, maxBudget = 0) {
+    if (skillId === 'poh_identity') skillId = 'dai_identity';
     const skill = this._skills.get(skillId);
     if (!skill || !skill.code) throw new Error(`Skill ${skillId} not found or has no run.js`);
     if (skill.executable === false || (skill.networkSourced && !skill.trusted)) {

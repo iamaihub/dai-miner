@@ -27,7 +27,8 @@ describe('fee gate — paid vs unpaid compute jobs', () => {
     expect(noBudget.error).toMatch(/maxBudget > 0/);
 
     // sanity: a free verdict job needs no payment
-    expect(board.submit({ type: 'verdict', payload: { address: 'bc1q' } }).jobId).toBeTruthy();
+    expect(board.submit({ type: 'verdict', payload: { address: '0x0000000000000000000000000000000000000001' } }).jobId).toBeTruthy();
+    expect(board.submit({ type: 'verdict' }).code).toBe('PAYMENT_PROOF_REQUIRED');
     expect(board.stats()).toMatchObject({ open: 1 }); // only the verdict job got on the board
   });
 

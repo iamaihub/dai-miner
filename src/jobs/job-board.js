@@ -18,9 +18,13 @@
 
 import { Wallet } from '../wallet/wallet.js';
 import { computeBoardJobPaymentHash } from './board-payment.js';
+import { prepareJob } from './job-kind.js';
 
 // Job types whose compute must be paid for (parity with the miner's /job fee gate).
-// Free 'verdict' (decentralized-artificial-intelligence) jobs are rewarded from coinbase instead.
+// A verdict job is only an identity scan (poh_identity on an address or web3
+// domain) and is rewarded from coinbase. Skill work is compute: prepareJob
+// rewrites type 'skill' to 'compute' and keeps skillId. 'skill' stays in this
+// set so a caller that bypasses prepareJob cannot enqueue it for free.
 export const FEE_REQUIRED_BOARD_TYPES = new Set(['skill', 'compute']);
 
 export const CLAIM_LEASE_MS = 90_000;   // reclaim a job if no result within this
@@ -72,6 +76,9 @@ export class JobBoard {
   /** Add a compute job to the board. Returns { jobId } or { error }. */
   submit(job) {
     if (!job || typeof job !== 'object') return { error: 'invalid job' };
+    // Identity scans stay verdict. Every other submission, including a skill
+    // and a verdict with no address or web3 domain, is compute.
+    job = prepareJob(job);
     // Fee-required jobs must carry a signed payment proof + budget so a worker
     // isn't asked to compute paid work for free. Full verification (signature vs
     // the requester's registered key, nonce, balance) happens on the proposer at
@@ -280,7 +287,7 @@ export class JobBoard {
       e.handedOutAt = now;
       out.push({
         jobId: e.job.id, worker: e.resultBy, result: e.result,
-        jobType: e.job.type || 'verdict',
+        jobType: e.job.type || 'compute',
         requesterAddress: e.job.requesterAddress || null,
         maxBudget: e.job.maxBudget || 0,
         currency: e.job.currency || 'DAI',

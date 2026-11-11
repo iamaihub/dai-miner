@@ -17,6 +17,7 @@ import { DAIBlock } from './core/block.js';
 import { JobQueue } from './jobs/job-queue.js';
 import { computeBoardJobPaymentHash } from './jobs/board-payment.js';
 import { RACE_REPLICAS, CLAIM_LEASE_MS } from './jobs/job-board.js';
+import { prepareJob, isIdentitySkill } from './jobs/job-kind.js';
 import { detectMyCountry, getCountryProximityMultiplier } from './jobs/geo.js';
 import { getMethodsManager } from './signals/methods-manager.js';
 import { P2PGossip } from './network/p2p-gossip.js';
@@ -342,7 +343,9 @@ const DEFAULT_ENABLED_SKILLS = new Set([
 ]);
 
 // Job types that require a paid, signature-verified fee before the node will
-// run them at all (as opposed to 'verdict' jobs, where a fee is optional).
+// run them at all. A verdict is optional-fee and only runs for a poh_identity
+// scan of an address or web3 domain (see prepareJob). Skill work is compute;
+// 'skill' stays listed so an un-normalized gossip envelope cannot run free.
 const FEE_REQUIRED_JOB_TYPES = new Set(['skill', 'compute']);
 
 // A single fanned-out cascade task (one skill/MCP/LLM-generate step of someone
@@ -2167,40 +2170,36 @@ export class DAIMinerNode {
               relayPayload.jobId === jobId &&
               Wallet.verifySignature(relayPeer.signingPublicKey, JSON.stringify(relayPayload), rawJob._relayProof);
             const trustedRelay = rawJob._relayed === true && !!relayPeer && relayProofOk;
-            const feeRequired = FEE_REQUIRED_JOB_TYPES.has(rawJob.type) && !trustedRelay;
 
-            // Fee-required job types (skill execution, model/dataset compute) must have a
-            // non-zero budget — the default LLM chat is free, but real compute work tips
-            // the developer/dataset (where applicable) and the miner running it.
-            if (feeRequired && !(rawJob.maxBudget > 0)) {
-              res.statusCode = 402;
-              return res.end(JSON.stringify({
-                error: `${rawJob.type} jobs require a fee (maxBudget > 0) paid in DAI. The default LLM chat is free, but real compute tips the developer/dataset and the miner.`,
-                code: 'FEE_REQUIRED',
-              }));
-            }
-
-            if (rawJob.type === 'compute' && !rawJob.model) {
-              res.statusCode = 400;
-              return res.end(JSON.stringify({ error: 'model is required for compute jobs' }));
-            }
-
-            // Normalize a bit
-            const job = {
-              type: rawJob.type || 'verdict',
-              payload: rawJob.payload || { address: rawJob.address },
+            // Verdict only for a poh_identity scan (address or web3 domain).
+            // A skill is a compute subprocess: type becomes compute, skillId stays.
+            const drafted = {
               originCountry: rawJob.originCountry || rawJob.originRegion,
               source: 'api', // marks as local UI job — skip network slashing
               ...rawJob,
               id: jobId, // always wins over rawJob.id (same value when caller supplied one)
             };
+            if (!drafted.payload && drafted.address) drafted.payload = { address: drafted.address };
+            const job = prepareJob(drafted);
+            const feeRequired = FEE_REQUIRED_JOB_TYPES.has(job.type) && !trustedRelay;
+
+            // Fee-required jobs (compute, including a skill subprocess) must have a
+            // non-zero budget. An identity scan is the only free job.
+            if (feeRequired && !(job.maxBudget > 0)) {
+              res.statusCode = 402;
+              return res.end(JSON.stringify({
+                error: `${job.type} jobs require a fee (maxBudget > 0) paid in DAI. An identity scan (poh_identity on an address or web3 domain) is the only free job.`,
+                code: 'FEE_REQUIRED',
+              }));
+            }
+
+            if (job.type === 'compute' && !job.skillId && !job.model) {
+              res.statusCode = 400;
+              return res.end(JSON.stringify({ error: 'model is required for compute jobs' }));
+            }
+
             // Use maxBudget as fee when no explicit fee provided (budget slider → job priority)
             if (!job.fee) job.fee = job.maxBudget || 10_000_000;
-
-            if (!job.payload?.address && job.type !== 'skill' && job.type !== 'compute') {
-              res.statusCode = 400;
-              return res.end(JSON.stringify({ error: 'payload.address is required for verdict jobs' }));
-            }
 
             // Fee currency — DAI by default; any registered stablecoin accepted.
             // The miner receives EXACTLY the currency paid (no conversion).
@@ -2315,10 +2314,9 @@ export class DAIMinerNode {
               job._unverified    = false;
             }
 
-            // Skill jobs may not have an address — skip address-specific processing
-            if (job.type !== 'skill' && job.payload?.address) {
-              // Allow username/handle queries (e.g. "KsaRedFx") — real-dai adapter will
-              // resolve via IdentityHub. Skip chain detection for non-address queries.
+            // Chain detection is for identity scans only. A compute job may carry
+            // an address field without being a poh_identity scan.
+            if (job.type === 'verdict' && job.payload?.address) {
               const queryLooksLikeAddress = /^(0x[0-9a-fA-F]{40}|[1-9A-HJ-NP-Za-km-z]{32,44}|(bc1|[13])[a-zA-HJ-NP-Z0-9]{25,87}|(EQ|UQ)[A-Za-z0-9+/=_-]{46}|dai[0-9a-f]{40})$/i.test(job.payload.address.trim());
               const queryLooksLikeDomain = /^[a-zA-Z0-9_-]+\.[a-zA-Z0-9]+$/.test(job.payload.address.trim()) && !queryLooksLikeAddress;
 
@@ -8028,12 +8026,13 @@ export class DAIMinerNode {
       // Skill/compute gossip without a payment proof is free GPU. Origin already
       // escrowed; peers still require the signed proof so a random envelope cannot
       // enqueue paid work. Onion-search and other tools stay available via /job.
-      if (FEE_REQUIRED_JOB_TYPES.has(rawJob?.type) && !rawJob.paymentTx?.signature) {
-        console.warn(`[DAI-Miner] Ignoring gossip ${rawJob.type} job ${rawJob.id}: no payment proof`);
+      const prepared = prepareJob(rawJob);
+      if (FEE_REQUIRED_JOB_TYPES.has(prepared?.type) && !prepared.paymentTx?.signature) {
+        console.warn(`[DAI-Miner] Ignoring gossip ${prepared.type} job ${prepared.id}: no payment proof`);
         return;
       }
 
-      const job = this.jobQueue.addJob(rawJob);
+      const job = this.jobQueue.addJob(prepared);
       this._recordJob(job); // make status/result queryable even for network-originated jobs
 
       const minerInfo = {
@@ -8228,9 +8227,10 @@ export class DAIMinerNode {
         }
       }
       if (!claimed) return;
-      console.log(`[DAI-Worker] Claimed board job ${claimed.id} (${claimed.type || 'verdict'}) — computing…`);
+      const ready = prepareJob(claimed) || claimed;
+      console.log(`[DAI-Worker] Claimed board job ${ready.id} (${ready.type}) — computing…`);
 
-      const result = await this._computeBoardJob(claimed);
+      const result = await this._computeBoardJob(ready);
       if (!result) return;
 
       const ts2 = Date.now();
@@ -8704,16 +8704,19 @@ export class DAIMinerNode {
 
   async _computeBoardJob(job) {
     const start = Date.now();
+    job = prepareJob(job) || job;
     try {
-      if (job.type === 'skill' && job.skillId) {
+      // A pinned skill is a compute subprocess. poh_identity is not: that scan
+      // is the verdict branch below, and only when the target is an address
+      // or a web3 domain.
+      if (job.skillId && !isIdentitySkill(job.skillId)) {
         if (!this.isSkillEnabled(job.skillId)) return null;
         const { output, tokensUsed } = await skillsManager.runSkill(job.skillId, job.payload, this.config, job.maxBudget);
         return { type: 'skill', skillId: job.skillId, output, tokensUsed, computationTimeMs: Date.now() - start };
       }
-      // Compute (LLM) board jobs — run QVAC just like the /job HTTP path. Without this
-      // branch a 'compute' job fell through to the verdict/scan path, which then read
-      // .startsWith on the (absent) payload.address and crashed. Mirrors the token
-      // metering + no-refund cap + public-job sealing used everywhere else.
+      // Compute (LLM) board jobs — run QVAC just like the /job HTTP path.
+      // Anything that is not an identity scan is compute, including a job that
+      // arrived labeled verdict with no address or domain.
       if (job.type === 'compute') {
         const dataset = job.dataset || job.datasetId || null;
         let prompt  = job.payload?.prompt || job.payload?.message || job.payload?.question;
@@ -8835,6 +8838,9 @@ export class DAIMinerNode {
           computationTimeMs: Date.now() - start,
         };
       }
+      if (job.type !== 'verdict') {
+        throw new Error('not an identity scan — verdict runs only for poh_identity on an address or web3 domain');
+      }
       const v = await computeVerdictWithExistingDai(job, this.config);
       return {
         type: 'verdict',
@@ -8853,6 +8859,7 @@ export class DAIMinerNode {
 
   async computeAndSubmitJob(job) {
     const start = Date.now();
+    job = prepareJob(job) || job;
 
     // ── Fanned-out cascade task (see CASCADE_TASK_JOB_TYPE / _cascadeFanOutActive
     // above). No escrow/settlement here — this node gets paid via the parent
@@ -8898,8 +8905,11 @@ export class DAIMinerNode {
       return;
     }
 
-    // ── Skill job path ────────────────────────────────────────────────────────
-    if (job.type === 'skill' && job.skillId) {
+    // ── Skill subprocess of compute ───────────────────────────────────────────
+    // poh_identity is not handled here. prepareJob leaves that as type verdict
+    // when the target is an address or web3 domain, and the block at the bottom
+    // runs the scan. Any other pinned skill runs inside this compute job.
+    if (job.skillId && !isIdentitySkill(job.skillId)) {
       // Gate: skill must be enabled on this node. Before giving up, try a peer
       // that self-reports it enabled (see _relayToPeerForSkill) — skip that
       // for a job already relayed here, so a skill nobody truly has enabled
@@ -8917,10 +8927,6 @@ export class DAIMinerNode {
         console.log(`[DAI-Miner] Skipping skill job ${job.id} — skill ${job.skillId} is disabled on this node`);
         this._updateJob(job.id, { status: 'ignored', error: 'skill disabled by miner' });
         return;
-      }
-      // dai_identity has no sandboxed code — delegate to the full verdict pipeline
-      if (job.skillId === 'dai_identity') {
-        return this.computeAndSubmitJob({ ...job, type: 'verdict' });
       }
       try {
         console.log(`[DAI-Miner] Running skill ${job.skillId} for job ${job.id}`);
@@ -10438,6 +10444,7 @@ export class DAIMinerNode {
   // DEFAULT_ENABLED_SKILLS are on unless the user explicitly toggled them off.
   // All other skills are off unless the user explicitly enabled them.
   isSkillEnabled(skillId) {
+    if (skillId === 'poh_identity') skillId = 'dai_identity';
     if (DEFAULT_ENABLED_SKILLS.has(skillId)) {
       return !this._explicitDisabled.has(skillId);
     }

@@ -93,7 +93,7 @@ describe('fee-race board (change 2)', () => {
 
   it('free jobs keep exclusive-claim work-sharing (not a race)', () => {
     const board = new JobBoard({ claimCooldownMs: 0 });
-    board.submit({ id: 'free', type: 'verdict' }); // no maxBudget
+    board.submit({ id: 'free', type: 'verdict', payload: { address: '0x0000000000000000000000000000000000000001' } });
     expect(board.claim('free', 'A').job.id).toBe('free');
     expect(board.claim('free', 'B').error).toMatch(/already claimed/);
   });
