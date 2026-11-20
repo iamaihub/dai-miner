@@ -57,8 +57,25 @@ describe('dai-node builtin pack', () => {
     global.fetch = vi.fn();
     await expect(tool(pack, 'get_block').run({})).rejects.toThrow('height required');
     await expect(tool(pack, 'explorer_search').run({})).rejects.toThrow('query required');
-    await expect(tool(pack, 'get_wallet_balance').run({})).rejects.toThrow('address required');
     expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('get_wallet_balance omits the address param when none is given, so the node answers for its own wallet', async () => {
+    realFetch = global.fetch;
+    const pack = buildDaiNodePack(() => ({}));
+    const seen = [];
+    global.fetch = vi.fn(async (url) => { seen.push(String(url)); return { ok: true, json: async () => ({ address: 'dai_self', balance: 75.08 }) }; });
+    await tool(pack, 'get_wallet_balance').run({});
+    expect(seen).toEqual(['http://127.0.0.1:3456/api/wallet/balance']);
+  });
+
+  it('get_wallet_balance passes an explicit address through as a query param', async () => {
+    realFetch = global.fetch;
+    const pack = buildDaiNodePack(() => ({}));
+    const seen = [];
+    global.fetch = vi.fn(async (url) => { seen.push(String(url)); return { ok: true, json: async () => ({ address: 'daiabc', balance: 0 }) }; });
+    await tool(pack, 'get_wallet_balance').run({ address: 'daiabc' });
+    expect(seen).toEqual(['http://127.0.0.1:3456/api/wallet/balance?address=daiabc']);
   });
 
   it('list_peers and get_network_history fail clearly with no bootnode configured', async () => {
@@ -95,7 +112,7 @@ describe('dai-node builtin pack', () => {
     expect(out.queried).toBe(2);
     expect(out.responded).toBe(1);
     expect(out.peers).toEqual([
-      { host: 'peer-a', wallet: 'dai_a', model: 'qwen3-1.7b', chainHeight: undefined, region: undefined, installedHfDatasets: ['ds1'], installedHfModels: [], capabilities: [], capabilityModels: [] },
+      { host: 'peer-a', wallet: 'dai_a', model: 'qwen3-1.7b', chainHeight: undefined, installedHfDatasets: ['ds1'], installedHfModels: [], capabilities: [], capabilityModels: [] },
     ]);
   });
 });

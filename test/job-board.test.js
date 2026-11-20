@@ -146,20 +146,12 @@ describe('JobBoard', () => {
 });
 
 describe('JobBoard — fairness (every node sees & gets work)', () => {
-  it('region is a soft preference, never a filter — all nodes see all jobs', () => {
+  it('every node sees every open job', () => {
     const board = new JobBoard();
     board.submit(freeScan({ id: 'ge', originCountry: 'GE' }));
     board.submit(freeScan({ id: 'hk', originCountry: 'HK' }));
-    board.submit(freeScan({ id: 'any' })); // untagged
+    board.submit(freeScan({ id: 'any' }));
 
-    // A worker in HK still sees every job (not just HK), with its region first.
-    const seen = board.listOpen({ region: 'HK' }).map(j => j.id);
-    expect(seen).toContain('ge');
-    expect(seen).toContain('hk');
-    expect(seen).toContain('any');
-    expect(seen[0]).toBe('hk'); // preference: matching region sorts first
-
-    // A worker sending no region also sees all of them.
     expect(board.listOpen().map(j => j.id).sort()).toEqual(['any', 'ge', 'hk']);
   });
 

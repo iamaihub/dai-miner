@@ -18,8 +18,6 @@ import { JobQueue } from './jobs/job-queue.js';
 import { computeBoardJobPaymentHash } from './jobs/board-payment.js';
 import { RACE_REPLICAS, CLAIM_LEASE_MS } from './jobs/job-board.js';
 import { prepareJob, isIdentitySkill } from './jobs/job-kind.js';
-import { detectMyCountry, getCountryProximityMultiplier } from './jobs/geo.js';
-import { getMethodsManager } from './signals/methods-manager.js';
 import { P2PGossip } from './network/p2p-gossip.js';
 import { DAISwarm } from './network/swarm.js';
 import { PairingRelay, PAIRING_LIMITS } from './network/pairing-relay.js';
@@ -400,7 +398,6 @@ export class DAIMinerNode {
       computeEnabled: config.computeEnabled !== false,
       inferenceMode: config.inferenceMode || 'auto',
       model: config.model || 'qwen3-1.7b',
-      region: config.region || null,
       // Fall back to well-known bootnodes when none are configured (e.g. fresh GUI install)
       bootnodes: config.bootnodes?.length ? config.bootnodes : DEFAULT_BOOTNODES,
       rpcEndpoints: resolvedRpc.rpcEndpoints,
@@ -426,11 +423,11 @@ export class DAIMinerNode {
     // Apply custom RPC endpoints from config into process.env so the loaded checker uses them
     this._applyRpcEndpoints();
 
+    delete this.config.region;
     this.jobQueue = new JobQueue();
     // Per-job status + full results for the "search -> poll status -> get verdict/profile/evidence" flow
     // (enables any frontend to connect directly to a discovered node via its walletApiPort)
     this.jobResults = new Map(); // jobId -> {id, status:'queued'|'computing'|'done'|'error', job, result:ScanResult|null, error?:string, createdAt, updatedAt}
-    this.myLatencyProfile = null; // populated on startup
     this.currentDifficulty = 3; // start at MIN_DIFFICULTY so the first post-restart block is not ground at a high diff
     this.gossip = new P2PGossip(
       this.config.wallet || 'unknown-miner',
@@ -992,16 +989,7 @@ export class DAIMinerNode {
       this.startWalletApiServer(earlyPort);
     }
 
-    // 1. Detect real geographic location using IP (for all countries)
-    await this.detectLocation();
-
-    // 2. Synchronize verified signals (CRITICAL - all miners must use the same set)
-    console.log('[DAI-Miner] Synchronizing verified signals...');
-    this.methodsManager = await getMethodsManager();
-    const status = this.methodsManager.getStatus();
-    console.log(`[DAI-Miner] Active signals: ${status.count} (hash=${status.hash}, source=${status.source})`);
-
-    // 2c. Local IPFS (Kubo) — the write backend that makes chain/brain backups
+    // Local IPFS (Kubo) — the write backend that makes chain/brain backups
     // work out of the box. Best-effort: if it can't start, pinning is skipped
     // and the node keeps running. Started before syncChain so chain bootstrap
     // from an IPFS snapshot can also use it.
@@ -1023,15 +1011,22 @@ export class DAIMinerNode {
     // device running solo.
     {
       const clusterCfg = this.config.qvacCluster || {};
-      if (clusterCfg.autoStart && clusterCfg.topic) {
+      try {
         const qvacModels = await getQvacModels();
-        const server = await qvacModels.startClusterWorker(clusterCfg);
-        if (server) {
-          const stopCluster = () => { qvacModels.stopClusterWorker().catch(() => {}); };
-          process.on('exit', stopCluster);
-          process.on('SIGINT', stopCluster);
-          process.on('SIGTERM', stopCluster);
+        // Always apply the saved topic so a later model load discovers phones,
+        // even when this machine is not itself announcing a worker.
+        if (qvacModels?.configureCluster) qvacModels.configureCluster(clusterCfg);
+        if (clusterCfg.autoStart && clusterCfg.topic) {
+          const server = await qvacModels.startClusterWorker(clusterCfg);
+          if (server) {
+            const stopCluster = () => { qvacModels.stopClusterWorker().catch(() => {}); };
+            process.on('exit', stopCluster);
+            process.on('SIGINT', stopCluster);
+            process.on('SIGTERM', stopCluster);
+          }
         }
+      } catch (e) {
+        console.warn(`[DAI-Miner] QVAC cluster setup skipped: ${e.message}`);
       }
     }
 
@@ -1104,7 +1099,6 @@ export class DAIMinerNode {
     this.startBoardWorker();
 
     console.log('[DAI-Miner] Node is live and ready to compute.');
-    console.log(`[DAI-Miner] Signals: ${this.methodsManager?.getStatus().hash} (${this.methodsManager?.getStatus().count} methods) | Region:`, this.myLatencyProfile?.region);
     console.log(`[DAI-Miner] Discovered peers: ${this.peers.length}`);
 
     // Periodic reputation recovery for good behavior (software protection)
@@ -1792,7 +1786,7 @@ export class DAIMinerNode {
       }
 
       if (url.pathname === '/api/wallet/balance') {
-        const address = url.searchParams.get('address');
+        const address = url.searchParams.get('address') || (this.config.daiWallet || this.config.wallet);
         if (!address) {
           res.statusCode = 400;
           return res.end(JSON.stringify({ error: 'address required' }));
@@ -2882,6 +2876,119 @@ export class DAIMinerNode {
           } catch (e) {
             res.statusCode = 400;
             res.end(JSON.stringify({ error: e.message }));
+          }
+        });
+        return;
+      }
+
+      // ── QVAC cluster pairing (localhost only) ──
+      // The desktop shows a code; a phone on the same Wi-Fi scans it and
+      // announces an RPC worker. The next model load splits layers onto it.
+      if (url.pathname === '/api/cluster') {
+        const sendJson = (code, obj) => {
+          res.statusCode = code;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify(obj));
+        };
+        if (!isTrulyLocalRequest(req)) return sendJson(403, { error: 'This endpoint is restricted to localhost.' });
+
+        const persistCluster = (patch) => {
+          const next = { ...(this.config.qvacCluster || {}), ...patch };
+          this.config.qvacCluster = next;
+          try {
+            const cfgPath = this.config._configPath || path.join(os.homedir(), '.dai-miner', 'config.json');
+            const saved = fs.existsSync(cfgPath) ? JSON.parse(fs.readFileSync(cfgPath, 'utf8')) : {};
+            saved.qvacCluster = { ...(saved.qvacCluster || {}), ...next };
+            fs.writeFileSync(cfgPath, JSON.stringify(saved, null, 2));
+            this.config.qvacCluster = saved.qvacCluster;
+          } catch (e) {
+            console.warn('[api/cluster] Could not persist config:', e.message);
+          }
+          return this.config.qvacCluster;
+        };
+
+        const snapshot = async (qvac, discover) => {
+          const view = qvac?.clusterView ? qvac.clusterView() : {};
+          const saved = this.config.qvacCluster || {};
+          const out = {
+            ok: true,
+            topic: view.topic || saved.topic || null,
+            allowRemote: view.allowRemote ?? !!saved.allowRemote,
+            autoStart: view.autoStart ?? !!saved.autoStart,
+            workerOnly: view.workerOnly ?? !!saved.workerOnly,
+            workerRunning: !!view.workerRunning,
+            serverId: view.serverId || null,
+            url: view.url || null,
+          };
+          if (discover && qvac?.discoverClusterPeers && out.topic) {
+            const peers = await qvac.discoverClusterPeers();
+            out.peers = (peers || []).map((p) => ({
+              url: p.url,
+              devices: Array.isArray(p.devices) ? p.devices.length : 0,
+            }));
+          }
+          return out;
+        };
+
+        if (req.method === 'GET') {
+          (async () => {
+            try {
+              const qvac = await getQvacModels();
+              sendJson(200, await snapshot(qvac, url.searchParams.get('discover') === '1'));
+            } catch (e) {
+              sendJson(502, { error: 'QVAC unavailable: ' + e.message });
+            }
+          })();
+          return;
+        }
+        if (req.method !== 'POST') return sendJson(405, { error: 'GET or POST required' });
+
+        let body = '';
+        req.on('data', (c) => {
+          body += c;
+          if (body.length > 8192) req.destroy();
+        });
+        req.on('end', async () => {
+          try {
+            const payload = body ? JSON.parse(body) : {};
+            const action = String(payload.action || 'start');
+            const qvac = await getQvacModels();
+            if (!qvac) return sendJson(503, { error: 'QVAC unavailable' });
+
+            if (action === 'stop') {
+              persistCluster({ autoStart: false });
+              if (qvac.configureCluster) qvac.configureCluster({ autoStart: false });
+              if (qvac.stopClusterWorker) await qvac.stopClusterWorker();
+              return sendJson(200, await snapshot(qvac, false));
+            }
+
+            if (action === 'reload') {
+              const unloaded = qvac.unloadResident ? await qvac.unloadResident('llm') : [];
+              const snap = await snapshot(qvac, true);
+              snap.unloaded = unloaded;
+              return sendJson(200, snap);
+            }
+
+            if (action !== 'start' && action !== 'rotate') {
+              return sendJson(400, { error: 'action must be start, stop, rotate, or reload' });
+            }
+
+            let topic = typeof payload.topic === 'string' ? payload.topic.trim() : '';
+            if (action === 'rotate' || !topic) topic = (this.config.qvacCluster || {}).topic || '';
+            if (action === 'rotate' || !topic) topic = crypto.randomBytes(18).toString('base64url');
+            const patch = {
+              topic,
+              allowRemote: true,
+              autoStart: true,
+              workerOnly: false,
+            };
+            persistCluster(patch);
+            const server = await qvac.startClusterWorker(patch);
+            const snap = await snapshot(qvac, false);
+            snap.started = !!server;
+            return sendJson(200, snap);
+          } catch (e) {
+            sendJson(400, { error: e.message });
           }
         });
         return;
@@ -4028,26 +4135,9 @@ export class DAIMinerNode {
         return;
       }
 
-      // ── Methods list (/methods) ───────────────────────────────────────────────
-      // Returns the network-synced active methods merged with this node's weights.
-      // Frontend uses this as the voting queue when routing through a peer.
+      // Old Proof-of-Human signal list. Nothing reads a live set anymore.
       if (req.method === 'GET' && url.pathname === '/methods') {
-        getMethodsManager().then(mm => {
-          const methods = mm ? mm.getActiveMethods() : [];
-          const brainDir = getBrainDataDir();
-          const weights = brainDir && fs.existsSync(path.join(brainDir, 'weights.json'))
-            ? JSON.parse(fs.readFileSync(path.join(brainDir, 'weights.json'), 'utf8'))
-            : {};
-          const result = methods.map(m => ({
-            ...m,
-            weight: weights[m.id] ?? 1.0,
-            score: weights[m.id] ?? 1.0,
-          }));
-          res.end(JSON.stringify(result));
-        }).catch(e => {
-          res.statusCode = 500;
-          res.end(JSON.stringify({ error: e.message }));
-        });
+        res.end('[]');
         return;
       }
 
@@ -5053,25 +5143,11 @@ export class DAIMinerNode {
       console.log(`   Brain feedback: POST http://localhost:${port}/api/brain/feedback`);
       console.log(`   Brain vote: POST http://localhost:${port}/api/brain/vote`);
       console.log(`   Brain sync (peer push): POST http://localhost:${port}/api/brain/sync/event`);
-      console.log(`   Methods list: GET http://localhost:${port}/methods`);
       console.log(`   Cached profile: GET http://localhost:${port}/profile/<address>`);
       console.log(`   (legacy still works: /test/job )`);
     });
 
     this.walletApiServer = server;
-  }
-
-  async detectLocation() {
-    try {
-      const location = await detectMyCountry();
-      this.myLocation = location;
-
-      console.log(`[DAI-Miner] Detected location: ${location.countryName || location.country} (${location.continent})`);
-      console.log(`[DAI-Miner] → You will get strong preference on jobs from ${location.country}.`);
-    } catch (e) {
-      this.myLocation = { country: 'XX', countryName: 'Unknown', continent: 'Unknown' };
-      console.warn('[DAI-Miner] Could not detect location. Using global scoring.');
-    }
   }
 
   /**
@@ -5721,7 +5797,9 @@ export class DAIMinerNode {
 
     const walletAddr = this.config.daiWallet || this.config.wallet;
     const ts = Date.now();
-    const methodsHash = this.methodsManager?.hash || 'unknown';
+    // Kept in the signed registration body so current bootnodes still verify it.
+    // The Proof-of-Human signal list is gone, so the value is empty.
+    const methodsHash = '';
 
     // Wait for the benchmark if it hasn't resolved yet (started in constructor in parallel
     // with start() steps; usually done by now but not guaranteed on slow GPU probes).
@@ -5751,7 +5829,6 @@ export class DAIMinerNode {
       host: advertisedHost,
       walletApiPort,
       p2pPort,
-      region: this.myLocation?.country || null,
       timestamp: ts,
       methodsHash,
       tflops: this.tflops || null,
@@ -5810,7 +5887,7 @@ export class DAIMinerNode {
             console.log('[DAI-Miner] Known peers:');
             this.knownPeers.forEach(p => {
               const v = p.signingPublicKey ? '✓verified' : 'unverified';
-              console.log(`  - ${p.wallet?.slice(0,10)}... @ ${p.host}:${p.walletApiPort} (${p.region || 'unknown region'}) [${v}]`);
+              console.log(`  - ${p.wallet?.slice(0,10)}... @ ${p.host}:${p.walletApiPort} [${v}]`);
             });
           }
         }
@@ -5829,7 +5906,6 @@ export class DAIMinerNode {
         wallet:        walletAddr,
         host:          this._getPublicHost(),
         walletApiPort: this.config.walletApiPort || 3456,
-        region:        this.myLocation?.country || null,
         methodsHash,
       }).catch(() => {});
     }
@@ -6408,13 +6484,6 @@ export class DAIMinerNode {
       } catch { /* malformed tx */ }
     });
 
-    // Subscribe to node status updates
-    this.gossip.subscribe('node-status', (status, from) => {
-      if (status.methodsHash && status.methodsHash !== this.methodsManager?.hash) {
-        console.log(`[DAI-Miner] Peer ${from?.slice(0,8)} is on different signals hash: ${status.methodsHash} (we have ${this.methodsManager?.hash})`);
-      }
-    });
-
     // Subscribe to new blocks from the network
     this.gossip.subscribe('new-block', (blockData, from) => {
       this.handleIncomingBlock(blockData, from);
@@ -6626,19 +6695,6 @@ export class DAIMinerNode {
       }
     });
 
-    // Periodically broadcast our current signals status
-    setInterval(() => {
-      if (this.methodsManager) {
-        const status = {
-          wallet: this.config.wallet,
-          methodsHash: this.methodsManager.hash,
-          methodsCount: this.methodsManager.getActiveMethods().length,
-          region: this.myLocation?.country,
-          load: 0.25,
-        };
-        this.gossip.publish('node-status', status);
-      }
-    }, 45000);
   }
 
   /**
@@ -8013,7 +8069,7 @@ export class DAIMinerNode {
   }
 
   startJobListener() {
-    console.log('[DAI-Miner] Listening for jobs (with geo awareness)...');
+    console.log('[DAI-Miner] Listening for jobs...');
 
     this.onNewJob = (rawJob) => {
       // Skip if we already know this job in any status (prevents duplicate runs when
@@ -8036,7 +8092,6 @@ export class DAIMinerNode {
       this._recordJob(job); // make status/result queryable even for network-originated jobs
 
       const minerInfo = {
-        country: this.myLocation?.country,
         currentLoad: this._activeJobId ? 1.0 : 0.0, // real load based on active slot
         reputation: this.reputation,
       };
@@ -8044,11 +8099,10 @@ export class DAIMinerNode {
       const score = this.jobQueue.scoreJobForMiner(job, minerInfo);
 
       if (score > 0 && this.config.computeEnabled) {
-        const geoNote = job.originCountry ? ` [from: ${job.originCountry}]` : '';
-        console.log(`[DAI-Miner] New job ${job.id} (${job.type})${geoNote} → score: ${score}`);
+        console.log(`[DAI-Miner] New job ${job.id} (${job.type}) → score: ${score}`);
         this._enqueueJob(job);
       } else {
-        const reason = score === 0 ? 'different continent / low priority' : 'compute disabled';
+        const reason = score === 0 ? 'no fee' : 'compute disabled';
         console.log(`[DAI-Miner] Ignoring job ${job.id} (${reason})`);
         this._updateJob(job.id, { status: 'ignored', error: reason });
       }
@@ -8196,11 +8250,10 @@ export class DAIMinerNode {
   async _pollBoardOnce() {
     if (this._boardBusy || this._syncInProgress) return;
     const base = this._boardBase;
-    const region = this.myLatencyProfile?.region;
     // Fetch a small batch, not just the top job: if a faster peer already grabbed
     // the first one (or the board is holding it back on our cooldown), we try the
     // next instead of wasting the whole poll interval.
-    const listRes = await fetch(`${base}/jobboard/open?limit=5${region ? `&region=${encodeURIComponent(region)}` : ''}`,
+    const listRes = await fetch(`${base}/jobboard/open?limit=5`,
       { signal: AbortSignal.timeout(10_000) });
     if (!listRes.ok) return;
     const { jobs } = await listRes.json();
@@ -9221,15 +9274,13 @@ export class DAIMinerNode {
     }
 
     try {
-      console.log(`[DAI-Miner] Computing ${job.type} for job ${job.id} using real DAI brain (geo-aware)`);
+      console.log(`[DAI-Miner] Computing ${job.type} for job ${job.id} using real DAI brain`);
 
       // This now calls the real existing DAI checker + brain when available
       const verdict = await computeVerdictWithExistingDai(job, this.config);
 
-      // Quick local validation that we used current signals
       if (verdict.methodsHash && !this._validateResultMethods(verdict)) {
-        console.warn(`[DAI-Miner] Computed result used stale signals (hash=${verdict.methodsHash}). Re-syncing...`);
-        await this.methodsManager?.sync();
+        console.warn(`[DAI-Miner] Computed result used stale signals (hash=${verdict.methodsHash}).`);
       }
 
       // === NEW: Enforce proper inference work (protection against lazy/malicious miners) ===
@@ -9995,16 +10046,10 @@ export class DAIMinerNode {
    * Public status for monitoring / other miners / dashboards
    */
   getStatus() {
-    const sig = this.methodsManager?.getStatus() || {};
     return {
       wallet: this.config.daiWallet || this.config.wallet,
       daiWallet: this.config.daiWallet || this.config.wallet,
       model: this.config.model || 'qwen2.5:1.5b',
-      methodsHash: sig.hash,
-      methodsCount: sig.count,
-      signalsSource: sig.source,
-      signalsAgeMin: sig.ageMinutes,
-      region: this.myLocation?.country,
       chainHeight: this.chain.length - 1,
       totalJobsProcessed: this.totalJobsProcessed || 0,
       peers: (this.peers || []).length,

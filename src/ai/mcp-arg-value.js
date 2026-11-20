@@ -29,8 +29,9 @@ export const REQUIRED_WHEN_LISTED = new Set([
   'transaction', 'signature',
 ]);
 
-// Listed keys a tool can run without. An IP lookup with no address uses the exit IP.
-const OPTIONAL_ONLY = new Set(['ip', 'date', 'limit', 'year', 'vs', 'amount', 'from', 'to']);
+// Listed keys a tool can run without. An IP lookup with no address uses the exit IP;
+// a wallet lookup with no address uses this node's own wallet.
+const OPTIONAL_ONLY = new Set(['ip', 'date', 'limit', 'year', 'vs', 'amount', 'from', 'to', 'address']);
 
 const FX = new Set([
   'USD', 'EUR', 'GBP', 'JPY', 'CHF', 'CAD', 'AUD', 'NZD', 'CNY', 'GEL', 'KGS',
@@ -164,6 +165,16 @@ export function shapeArgValue(key, text) {
     case 'ip': {
       const m = clean.match(/\b(?:\d{1,3}\.){3}\d{1,3}\b/);
       return m ? m[0] : null;
+    }
+    case 'address': {
+      // A DAI wallet address is literally 'dai' + 40 lowercase hex chars
+      // (Wallet.deriveAddressFromSigningKey). Without this case the key fell
+      // through to `default: return clean`, which sent the ENTIRE sentence —
+      // "what is my balance?" itself — as the address. Returning null here
+      // instead lets the caller omit the arg so the wallet endpoints' own
+      // "omit address for this node's own wallet" default applies.
+      const m = clean.match(/\bdai[0-9a-f]{40}\b/i);
+      return m ? m[0].toLowerCase() : null;
     }
     case 'url': {
       const m = clean.match(/https?:\/\/[^\s)]+/i);

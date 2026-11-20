@@ -48,23 +48,18 @@ describe('JobQueue', () => {
     expect(queue.getPendingJobs().length).toBe(0);
   });
 
-  it('should score jobs with geographic preference', () => {
+  it('scores by fee and ignores country', () => {
     const job = new Job({
       id: 'job-geo',
       fee: 100,
       originCountry: 'DE',
     });
 
-    // German miner should get high multiplier
-    const deMiner = { country: 'DE' };
-    const deScore = queue.scoreJobForMiner(job, deMiner);
+    const deScore = queue.scoreJobForMiner(job, { country: 'DE' });
+    const usScore = queue.scoreJobForMiner(job, { country: 'US' });
 
-    // US miner should get lower score for German job
-    const usMiner = { country: 'US' };
-    const usScore = queue.scoreJobForMiner(job, usMiner);
-
-    expect(deScore).toBeGreaterThan(usScore);
-    expect(deScore).toBeGreaterThan(100); // base fee boosted by geo
+    expect(deScore).toBe(usScore);
+    expect(deScore).toBe(100);
   });
 
   it('should penalize high load and low reputation', () => {

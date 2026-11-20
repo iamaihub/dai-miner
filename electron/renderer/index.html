@@ -3,13 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' http://127.0.0.1:* http://localhost:* https:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' http://127.0.0.1:* http://localhost:* https:;">
   <title>DAI Miner</title>
-  <!-- Tailwind via CDN is used for the onboarding wizard only.
-       It produces console warnings + a security notice in dev.
-       We can replace this with a proper build or scoped styles later. -->
+  <!-- Local Tailwind build (npm run build:css). The onboarding wizard and a few
+       overlays use utility classes; a CDN script leaves them unstyled offline. -->
+  <link rel="stylesheet" href="tailwind.css">
+  <!-- print media so a hung fonts request cannot block first paint offline.
+       onload promotes it once the file actually arrives. -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Space+Grotesk:wght@500;600&amp;display=swap" media="print" onload="this.media='all'">
   <script src="i18n.js"></script>
-  <script src="https://cdn.tailwindcss.com"></script>
   <!-- Markdown + Math rendering for chat -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
   <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
@@ -17,8 +19,6 @@
   <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Space+Grotesk:wght@500;600&amp;display=swap');
-
     :root {
       --accent: #22c55e;
     }
@@ -854,6 +854,9 @@
     .receive-view.active { display: flex; }
     .receive-addr-box { background: #0d0d0d; border: 1px solid #1c1c1c; border-radius: 6px; padding: 12px 16px; font-family: monospace; font-size: 11px; color: #e5e7eb; word-break: break-all; text-align: center; line-height: 1.6; width: 100%; box-sizing: border-box; }
     .send-view { display: flex; flex-direction: column; gap: 16px; }
+    /* Tailwind's .hidden, repeated here so a missing tailwind.css still
+       collapses the wizard instead of stacking every step. */
+    .hidden { display: none; }
     .send-view.hidden { display: none; }
     .receive-addr-box {
       background: #0d0d0d; border: 1px solid #1c1c1c; border-radius: 6px;
@@ -935,7 +938,7 @@
           <h1 class="font-display text-5xl leading-none tracking-tighter mb-2">AI Engine Setup</h1>
         </div>
         <div class="glass rounded-3xl p-6 border border-white/10 space-y-4">
-          <!-- Model picker: three options graded for THIS machine -->
+          <!-- Model picker: three categories with small/big, plus Narrow AI by specialty -->
           <div id="model-picker" class="hidden space-y-3">
             <div class="text-sm font-medium">Choose the AI model to download</div>
             <div id="model-hw-summary" class="text-xs text-zinc-500">Detecting hardware…</div>
@@ -1432,11 +1435,6 @@
         <span class="mining-dot" id="mining-dot"></span>
         <span class="sb-mining-label" id="mining-label">WAITING</span>
       </div>
-
-      <div class="sb-field" style="margin-top:auto;">
-        <div class="sb-label" data-i18n="sidebar.region">REGION</div>
-        <div class="sb-val dim" id="sidebar-region">auto-detected</div>
-      </div>
     </div>
 
     <!-- ─── CENTER: Tabs ─── -->
@@ -1892,6 +1890,7 @@
             <button class="settings-subtab" data-sub="mcp" onclick="switchSettingsSubpage('mcp')">MCP Servers</button>
             <button class="settings-subtab" data-sub="datasets" onclick="switchSettingsSubpage('datasets')">Datasets</button>
             <button class="settings-subtab" data-sub="wallet" onclick="switchSettingsSubpage('wallet')">Wallet</button>
+            <button class="settings-subtab" data-sub="devices" onclick="switchSettingsSubpage('devices')">Devices</button>
           </div>
 
           <!-- GENERAL -->
@@ -1938,6 +1937,34 @@
                       style="width:100%;padding:10px;background:#22c55e;color:#000;border:none;border-radius:6px;font-weight:600;cursor:pointer;font-size:12px;"
                       data-i18n="settings.save">Save</button>
               <div id="settings-save-status" style="font-size:11px;text-align:center;margin-top:6px;min-height:16px;"></div>
+            </div>
+          </div>
+
+          <!-- DEVICES -->
+          <div class="settings-subpage" id="settings-sub-devices">
+            <div>
+              <div style="font-size:10px;color:#666;letter-spacing:0.1em;margin-bottom:4px;text-transform:uppercase;">Phone compute</div>
+              <div style="font-size:12px;color:#9ca3af;line-height:1.45;">
+                Show this code in the wallet under Settings, Lend this phone. The phone has to be on the same Wi-Fi. It lends memory for the next model load and does not download the weights. Anyone on that network who has the code can join.
+              </div>
+            </div>
+            <div style="display:flex;gap:14px;align-items:flex-start;">
+              <img id="cluster-qr" alt="" width="160" height="160" style="background:#fff;border-radius:8px;display:none;" />
+              <div style="flex:1;min-width:0;">
+                <div id="cluster-topic" style="font-family:monospace;font-size:11px;word-break:break-all;color:#e5e7eb;min-height:32px;"></div>
+                <div id="cluster-status" style="font-size:11px;color:#9ca3af;margin-top:6px;line-height:1.4;"></div>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button type="button" onclick="clusterStart()" style="padding:8px 12px;background:#22c55e;color:#000;border:none;border-radius:6px;font-weight:600;cursor:pointer;font-size:12px;">Show code</button>
+              <button type="button" onclick="clusterRotate()" style="padding:8px 12px;background:#111;color:#e5e7eb;border:1px solid #2a2a2a;border-radius:6px;cursor:pointer;font-size:12px;">New code</button>
+              <button type="button" onclick="clusterRefresh()" style="padding:8px 12px;background:#111;color:#e5e7eb;border:1px solid #2a2a2a;border-radius:6px;cursor:pointer;font-size:12px;">Look for phones</button>
+              <button type="button" onclick="clusterReload()" style="padding:8px 12px;background:#111;color:#e5e7eb;border:1px solid #2a2a2a;border-radius:6px;cursor:pointer;font-size:12px;">Use joined phones</button>
+              <button type="button" onclick="clusterStop()" style="padding:8px 12px;background:#111;color:#fca5a5;border:1px solid #2a2a2a;border-radius:6px;cursor:pointer;font-size:12px;">Stop sharing</button>
+            </div>
+            <div>
+              <div style="font-size:10px;color:#666;letter-spacing:0.1em;margin-bottom:4px;text-transform:uppercase;">Phones on this code</div>
+              <div id="cluster-peers" style="font-size:12px;color:#9ca3af;font-family:monospace;">No lookup yet.</div>
             </div>
           </div>
 

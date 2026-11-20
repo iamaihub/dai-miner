@@ -1,16 +1,10 @@
 /**
- * DAI Miner Network - Job Queue / Mempool with Geographic Awareness
- *
- * This is the "mempool of jobs" the user asked for.
+ * DAI Miner Network - Job Queue / Mempool
  *
  * Jobs (ScanRequests, Profile computations, etc.) enter here.
- * Miners can see pending jobs and decide to compete based on:
- *   - Fee
- *   - Their estimated latency to the requester
- *   - Job type / difficulty
+ * Miners compete on fee, then load and reputation.
  */
 
-import { getCountryProximityMultiplier } from './geo.js';
 
 export class Job {
   constructor({
@@ -80,22 +74,12 @@ export class JobQueue {
   /**
    * Score a job from a miner's perspective.
    * Higher score = more attractive to compete on.
-   *
-   * Geographic / ping preference is the key here.
    */
   scoreJobForMiner(job, minerInfo = {}) {
     const fee = Number(job.fee) || 0;
     if (fee <= 0) return 0;
 
     let score = fee * (1 + (job.priority || 0) * 0.1);
-
-    // === Real country-level geographic preference ===
-    const geoMultiplier = getCountryProximityMultiplier(
-      minerInfo.country,
-      job.originCountry
-    );
-
-    score *= geoMultiplier;
 
     // Optional hard filter (if job specifies max latency)
     if (job.maxLatencyMs && minerInfo.estimatedLatencyMs > job.maxLatencyMs) {

@@ -71,7 +71,6 @@ The miner creates a DAI wallet automatically on first run and stores it in `~/.d
 | `model` | `qwen3-1.7b` | QVAC model id/alias (`qwen3-0.6b`…`qwen3-8b`) or a GGUF URL |
 | `walletApiPort` | `3456` | Port for the local API server |
 | `computeEnabled` | `true` | Set `false` to run as relay-only |
-| `region` | `auto` | Geographic region tag for job routing |
 | `autoStart` | `true` | Start mining immediately on launch |
 
 RPC endpoints can be configured per-chain under the `rpc` key — see `config.example.json`.
@@ -130,9 +129,7 @@ Each block contains:
 |---|---|
 | New blocks | P2P gossip `new-block` (flood-fill, TTL=4) |
 | Pending transactions | P2P gossip `new-tx` |
-| Node status (methodsHash, region, load) | P2P gossip `node-status` |
 | Chain history (cold start) | HTTP pull from bootnode `/chain/blocks` + IPFS snapshot fallback |
-| Verified signals (canonical set + hash) | HTTP from iamai.kg + IPFS fallback |
 | Brain feedback events | Peer-to-peer push + bootnode `/brain/events` |
 | Signal weight updates | Same as brain feedback |
 | Peer records (host:port) | Bootnode `/peers` + IPFS peer directory |

@@ -14,7 +14,7 @@ npm run test:integration   # integration tests (requires dev/ checker)
 |---|---|---|
 | `blockchain.test.js` | 49 | All 6 blockchain fixes + job deduplication + block integrity |
 | `wallet.test.js` | 2 | Wallet generation, JSON round-trip |
-| `job-queue.test.js` | — | Job scoring, geo preference, reputation |
+| `job-queue.test.js` | — | Job scoring, reputation |
 | `result-validator.test.js` | — | Signal coverage, methodsHash consensus, work validation |
 
 ### blockchain.test.js suites

@@ -529,7 +529,7 @@ export function resolveTaskArgs(task, priorById, userMessage) {
   if (isPlaceholder(args.city) && extracted.city && (!allowed.length || allowed.includes('city'))) args.city = extracted.city;
   if (isPlaceholder(args.query) && extracted.query && (!allowed.length || allowed.includes('query'))) args.query = extracted.query;
   const concrete = Object.entries(args).filter(([, v]) => !isPlaceholder(v));
-  if (allowed.length && !concrete.length) return null;
+  if (allowed.length && !concrete.length && !argsMayBeEmpty(allowed)) return null;
   if (allowed.length && missingRequiredArgs(allowed, args, task.inputSchema)) return null;
   return args;
 }

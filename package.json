@@ -27,29 +27,27 @@
   },
   "scripts": {
     "postinstall": "node scripts/verify-electron.cjs && node scripts/codesign-native-deps.cjs && node scripts/patch-qvac-electron.cjs",
+    "build:css": "tailwindcss -c tailwind.config.cjs -i electron/renderer/tailwind.src.css -o electron/renderer/tailwind.css --minify",
     "start": "electron --no-sandbox .",
     "start:headless": "node start.js",
     "dev": "node --watch start.js",
     "easy": "bash scripts/easy-start.sh",
-    "demo": "node scripts/demo-geo-race.js",
-    "demo:geo": "node scripts/demo-geo-race.js",
     "start:local": "node scripts/start-local-network.js",
     "serve:landing": "node scripts/serve-landing.js",
     "start:landing-chat": "node scripts/landing-chat-proxy.js",
     "start:node": "node src/miner-node.js",
     "start:bootnode": "node src/bootnode.js --port 8080 --bind=127.0.0.1 --data-dir ~/.dai-bootnode --peer=http://localhost:3456",
     "start:bootnode:local": "node src/bootnode.js --port 8080 --bind=127.0.0.1 --data-dir ~/.dai-bootnode --peer=http://localhost:3456 --allow-local-hosts",
-    "test:job": "node scripts/submit-test-job.js",
     "build:bin": "pkg . --compress GZip",
     "build:deb": "bash scripts/build-deb.sh",
-    "build:electron": "electron-builder",
+    "build:electron": "npm run build:css && electron-builder",
     "bundle:qvac": "qvac bundle sdk --host win32-x64 --host linux-x64 --host linux-arm64 --host darwin-x64 --host darwin-arm64 --no-install && node -e \"fs.rmSync('qvac/worker.bundle.js',{force:true})\"",
-    "build:electron:mac": "node scripts/fetch-bare-runtimes.cjs darwin-x64 darwin-arm64 && node scripts/patch-qvac-electron.cjs --strict && npm run bundle:qvac && electron-builder --mac --publish never",
-    "build:electron:win": "node scripts/fetch-bare-runtimes.cjs win32-x64 && node scripts/patch-qvac-electron.cjs --strict && npm run bundle:qvac && electron-builder --win --publish never",
-    "build:electron:linux": "node scripts/fetch-bare-runtimes.cjs linux-x64 linux-arm64 && node scripts/patch-qvac-electron.cjs --strict && npm run bundle:qvac && electron-builder --linux --publish never",
-    "build:electron:all": "node scripts/fetch-bare-runtimes.cjs win32-x64 linux-x64 linux-arm64 darwin-x64 darwin-arm64 && node scripts/patch-qvac-electron.cjs --strict && npm run bundle:qvac && electron-builder -mwl",
+    "build:electron:mac": "npm run build:css && node scripts/fetch-bare-runtimes.cjs darwin-x64 darwin-arm64 && node scripts/patch-qvac-electron.cjs --strict && npm run bundle:qvac && electron-builder --mac --publish never",
+    "build:electron:win": "npm run build:css && node scripts/fetch-bare-runtimes.cjs win32-x64 && node scripts/patch-qvac-electron.cjs --strict && npm run bundle:qvac && electron-builder --win --publish never",
+    "build:electron:linux": "npm run build:css && node scripts/fetch-bare-runtimes.cjs linux-x64 linux-arm64 && node scripts/patch-qvac-electron.cjs --strict && npm run bundle:qvac && electron-builder --linux --publish never",
+    "build:electron:all": "npm run build:css && node scripts/fetch-bare-runtimes.cjs win32-x64 linux-x64 linux-arm64 darwin-x64 darwin-arm64 && node scripts/patch-qvac-electron.cjs --strict && npm run bundle:qvac && electron-builder -mwl",
     "build:all": "npm run build:bin && npm run build:deb",
-    "dist": "electron-builder",
+    "dist": "npm run build:css && electron-builder",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:integration": "RUN_INTEGRATION=1 node test/integration/run-integration.js"
@@ -65,12 +63,13 @@
   ],
   "license": "MIT",
   "devDependencies": {
-    "@qvac/cli": "^0.18.0",
+    "@qvac/cli": "^0.19.0",
     "@yao-pkg/pkg": "^5.8.1",
     "electron": "^44.9.3",
     "electron-builder": "^24.13.3",
     "png-to-ico": "^3.0.1",
     "sharp": "^0.34.5",
+    "tailwindcss": "^3.4.17",
     "vitest": "^1.6.1"
   },
   "overrides": {
@@ -87,7 +86,7 @@
     "qrcode": "^1.5.4"
   },
   "optionalDependencies": {
-    "@qvac/sdk": "^0.23.0"
+    "@qvac/sdk": "^0.24.0"
   },
   "build": {
     "appId": "kg.iamai.daiminer",

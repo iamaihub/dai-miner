@@ -174,7 +174,7 @@ export class IPFSSync {
    * Pin this miner's own peer record to IPFS and push the CID to the bootnode.
    * Called once after successful bootnode registration.
    *
-   * peerInfo: { wallet, host, walletApiPort, region, methodsHash }
+   * peerInfo: { wallet, host, walletApiPort, methodsHash }
    */
   async publishPeerRecord(peerInfo) {
     try {
@@ -203,7 +203,7 @@ export class IPFSSync {
 
   /**
    * Fetch the peer directory from IPFS using the cached (or bootnode-supplied) CID.
-   * Returns an array of { wallet, host, walletApiPort, region } peer objects,
+   * Returns an array of { wallet, host, walletApiPort } peer objects,
    * or [] if the directory is unreachable.
    *
    * Used as a fallback when all bootnodes are unreachable.

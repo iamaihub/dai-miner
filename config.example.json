@@ -5,7 +5,6 @@
   "inferenceMode": "auto",
   "llmApiKey": "",
   "autoStart": true,
-  "region": "auto",
   "bootnodes": [
     "https://miner.iamai.kg",
     "https://bootnode.aist.exchange"
@@ -119,14 +118,13 @@
     "bindHost": "127.0.0.1",
     "startupTimeoutMs": 60000
   },
-  "_comment_qvacCluster": "Opt-in multi-device model pooling (QVAC SDK 0.21+ clustered inference over RPC, on llama.cpp's RPC backend) — splits one model's layers across several of YOUR OWN devices so a model too big for any one of them can load. Off by default: the RPC channel is unauthenticated, so set the same topic (a shared secret-ish string) + settings on every device in your own private group, never on the open miner network. workerOnly:true on a device that should only lend memory/compute and never initiate its own clustered load.",
+  "_comment_qvacCluster": "Opt-in multi-device model pooling (QVAC clustered inference over RPC). Splits one model's layers across your own devices so a model too big for any one of them can load. Off by default: the RPC channel is unauthenticated, so the same topic is a private group, never the open miner network. workerOnly:true on a device that should only lend memory and never initiate its own clustered load. Every device QVAC discovers is used.",
   "qvacCluster": {
     "autoStart": false,
     "topic": "",
     "allowRemote": false,
     "workerOnly": false,
     "minPeers": 1,
-    "maxDevices": 8,
     "discoverTimeoutMs": 4000
   },
   "_comment_genesisAlloc": "Optional: pre-fund addresses at block 0 on a clean network start. Amounts in raw DAI (1 DAI = 1000000000 raw). Only applied once when chain is empty.",

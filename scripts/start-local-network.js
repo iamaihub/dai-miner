@@ -2,33 +2,27 @@
 /**
  * Start a small local DAI Miner Network simulation
  * 
- * Spins up 3 miners in different "regions" and injects jobs.
- * Great for testing the geo + job queue system locally.
+ * Spins up 3 miners and injects jobs.
+ * Useful for exercising the local job queue.
  */
 
 import { DAIMinerNode } from '../src/miner-node.js';
 import { JobQueue } from '../src/jobs/job-queue.js';
 
-console.log('\n🌍 Starting Local DAI Miner Network Simulation\n');
+console.log('\nStarting Local DAI Miner Network Simulation\n');
 
 const jobQueue = new JobQueue();
 
-// Create miners in different regions
 const miners = [
-  new DAIMinerNode({ wallet: 'miner-georgia', computeEnabled: true }),
-  new DAIMinerNode({ wallet: 'miner-singapore', computeEnabled: true }),
-  new DAIMinerNode({ wallet: 'miner-europe', computeEnabled: true }),
+  new DAIMinerNode({ wallet: 'miner-a', computeEnabled: true }),
+  new DAIMinerNode({ wallet: 'miner-b', computeEnabled: true }),
+  new DAIMinerNode({ wallet: 'miner-c', computeEnabled: true }),
 ];
-
-// Assign real countries
-miners[0].myLocation = { country: 'GE', countryName: 'Georgia' };
-miners[1].myLocation = { country: 'SG', countryName: 'Singapore' };
-miners[2].myLocation = { country: 'DE', countryName: 'Germany' };
 
 for (const m of miners) {
   m.jobQueue = jobQueue; // share the queue for demo
   m.start().then(() => {
-    console.log(`  ✓ ${m.config.wallet} online in ${m.myLatencyProfile.region}`);
+    console.log(`  ✓ ${m.config.wallet} online`);
   });
 }
 

@@ -131,10 +131,9 @@ export class JobBoard {
 
   /**
    * Jobs available to claim (open, or claimed with an expired lease). Every node
-   * sees every job — `region` is only a soft preference that sorts jobs matching
-   * the caller's region first, never a filter that hides work from a node.
+   * sees every job.
    */
-  listOpen({ limit = 10, region = null } = {}) {
+  listOpen({ limit = 10 } = {}) {
     this._sweep();
     const now = this._now();
     const out = [];
@@ -154,10 +153,6 @@ export class JobBoard {
     }
     // Fee auction: highest bid first (maxBudget is the bid; fee breaks ties).
     out.sort((a, b) => ((b.maxBudget || 0) - (a.maxBudget || 0)) || ((b.fee || 0) - (a.fee || 0)));
-    if (region) {
-      // Stable partition: region-matching jobs first, fee order preserved within each group.
-      out.sort((a, b) => (b.originCountry === region ? 1 : 0) - (a.originCountry === region ? 1 : 0));
-    }
     return out.slice(0, limit);
   }
 

@@ -78,7 +78,6 @@ function updateStatus(status) {
     const count = status.peers ?? status.peerCount ?? status.activeJobs;
     if (count != null) set('sidebar-peers', count + ' online');
   }
-  if (status.region) set('sidebar-region', status.region);
 
   // Mining active indicator
   const isActive = (status.activeJobs ?? 0) > 0 || (status.qualityStats?.validSubmissions ?? 0) > 0;
@@ -554,8 +553,12 @@ async function promptModelChoice(fallback) {
   if (!data?.options?.length) return fallback;
 
   if (hwEl) hwEl.textContent = data.hardwareSummary || '';
-  const tierLabel = { small: 'Small', medium: 'Medium', large: 'Large' };
+  const tierLabel = { small: 'Small', medium: 'Medium', large: 'Large', big: 'Big' };
   let selected = data.recommended || data.options[0].name;
+  const narrowCat = (data.categories || []).find(c => c.domains?.length);
+  let narrowDomain = narrowCat?.domains?.find(d => d.small?.name === selected || d.big?.name === selected)?.id
+    || narrowCat?.domains?.[0]?.id
+    || null;
 
   const paint = () => optsEl.querySelectorAll('label').forEach(l => {
     const on = l.getAttribute('data-model') === selected;
@@ -564,19 +567,67 @@ async function promptModelChoice(fallback) {
     l.classList.toggle('border-white/10', !on);
   });
 
-  optsEl.innerHTML = data.options.map(o => `
+  const card = (o) => `
     <label data-model="${o.name}" class="flex items-start gap-3 p-3 rounded-2xl border cursor-pointer">
       <input type="radio" name="model-choice" value="${o.name}" ${o.name === selected ? 'checked' : ''} class="mt-1 accent-[#22c55e]">
       <div class="flex-1">
-        <div class="text-sm font-medium">${tierLabel[o.tier] || o.tier} · ${o.label}
+        <div class="text-sm font-medium">${tierLabel[o.size || o.tier] || o.tier || ''} · ${o.label}
           <span class="text-xs text-zinc-500">~${o.approxDownloadGB} GB${o.name === data.recommended ? ' · recommended' : ''}</span></div>
-        <div class="text-xs text-zinc-500">${o.blurb}</div>
+        <div class="text-xs text-zinc-500">${o.blurb || ''}</div>
       </div>
-    </label>`).join('');
+    </label>`;
+
+  const pair = (small, big) => {
+    const items = [small, big].filter(Boolean);
+    const seen = new Set();
+    return items.filter(o => (seen.has(o.name) ? false : seen.add(o.name))).map(card).join('');
+  };
+
+  const render = () => {
+    const cats = data.categories || [];
+    if (!cats.length) {
+      optsEl.innerHTML = (data.options || []).map(card).join('');
+      return;
+    }
+    optsEl.innerHTML = cats.map(cat => {
+      if (cat.domains?.length) {
+        const domain = cat.domains.find(d => d.id === narrowDomain) || cat.domains[0];
+        return `
+          <div class="text-xs font-medium text-zinc-400 pt-2">${cat.label}</div>
+          <div class="text-xs text-zinc-500">Pick a specialty. The suggestion is a small and a big model that fit this machine.</div>
+          <div class="flex flex-wrap gap-2">
+            ${cat.domains.map(d => `
+              <button type="button" data-domain="${d.id}"
+                      class="px-3 py-1.5 rounded-2xl border text-xs ${d.id === domain.id ? 'border-[#22c55e] bg-[#22c55e]/10 text-white' : 'border-white/10 text-zinc-300'}">${d.label}</button>
+            `).join('')}
+          </div>
+          ${pair(domain.small, domain.big)}`;
+      }
+      return `
+        <div class="text-xs font-medium text-zinc-400 pt-2">${cat.label}</div>
+        ${pair(cat.small, cat.big)}`;
+    }).join('');
+  };
+  render();
   paint();
 
-  optsEl.querySelectorAll('input[name="model-choice"]').forEach(r =>
-    r.addEventListener('change', () => { selected = r.value; paint(); }));
+  optsEl.onchange = (ev) => {
+    const r = ev.target;
+    if (r?.name !== 'model-choice') return;
+    selected = r.value;
+    paint();
+  };
+  optsEl.onclick = (ev) => {
+    const btn = ev.target.closest?.('[data-domain]');
+    if (!btn || !optsEl.contains(btn)) return;
+    narrowDomain = btn.getAttribute('data-domain');
+    const domain = narrowCat?.domains?.find(d => d.id === narrowDomain);
+    if (domain && selected !== domain.small.name && selected !== domain.big.name) {
+      selected = domain.small.name;
+    }
+    render();
+    paint();
+  };
 
   btn.disabled = false;
   return await new Promise(resolve => {
@@ -1078,6 +1129,7 @@ window.skipOtherChain = function(chainId) {
 window.switchSettingsSubpage = function(name) {
   document.querySelectorAll('.settings-subpage').forEach(el => el.classList.toggle('active', el.id === `settings-sub-${name}`));
   document.querySelectorAll('.settings-subtab').forEach(el => el.classList.toggle('active', el.dataset.sub === name));
+  if (name === 'devices') refreshClusterPanel(false);
 };
 
 async function loadSettingsPanel() {
@@ -1197,6 +1249,97 @@ window.downloadSelectedModel = async function() {
   } finally {
     if (btn) btn.disabled = false;
   }
+};
+
+// ── Devices: phone lends compute over a shared code ─────────────────────────
+
+function clusterApi(path, opts) {
+  const port = window._minerApiPort || 3456;
+  return fetch(`http://localhost:${port}${path}`, opts);
+}
+
+async function paintCluster(data, note) {
+  const topicEl = document.getElementById('cluster-topic');
+  const statusEl = document.getElementById('cluster-status');
+  const qrEl = document.getElementById('cluster-qr');
+  const peersEl = document.getElementById('cluster-peers');
+  if (!topicEl) return;
+  const topic = data?.topic || '';
+  topicEl.textContent = topic || 'No code yet. Show code to make one.';
+  const lines = [];
+  if (note) lines.push(note);
+  if (topic && data?.workerRunning) lines.push('This computer is announcing on the code.');
+  else if (topic) lines.push('The code is saved. The next model load will look for phones.');
+  if (Array.isArray(data?.unloaded)) {
+    lines.push(data.unloaded.length
+      ? `Unloaded ${data.unloaded.join(', ')}. The next reply loads across the phones.`
+      : 'No chat model was loaded. The next reply will look for phones.');
+  }
+  if (statusEl) statusEl.textContent = lines.join(' ');
+  if (qrEl) {
+    if (!topic || !window.daiMinerAPI?.generateQR) {
+      qrEl.style.display = 'none';
+      qrEl.removeAttribute('src');
+    } else {
+      try {
+        qrEl.src = await window.daiMinerAPI.generateQR('dai-cluster:' + topic, 320);
+        qrEl.style.display = 'block';
+      } catch {
+        qrEl.style.display = 'none';
+      }
+    }
+  }
+  if (peersEl && Array.isArray(data?.peers)) {
+    peersEl.textContent = data.peers.length
+      ? data.peers.map((p) => `${p.url}${p.devices ? ` (${p.devices} device${p.devices === 1 ? '' : 's'})` : ''}`).join('\n')
+      : 'No phone answered. It has to be on this Wi-Fi, with the wallet lending.';
+  }
+}
+
+async function refreshClusterPanel(discover) {
+  const statusEl = document.getElementById('cluster-status');
+  try {
+    const res = await clusterApi('/api/cluster' + (discover ? '?discover=1' : ''));
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    await paintCluster(data);
+  } catch (e) {
+    if (statusEl) statusEl.textContent = `Could not reach the miner: ${e.message}`;
+  }
+}
+
+async function postCluster(action) {
+  const statusEl = document.getElementById('cluster-status');
+  if (statusEl) statusEl.textContent = action === 'reload' ? 'Reloading…' : 'Working…';
+  try {
+    const res = await clusterApi('/api/cluster', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    let note = '';
+    if (action === 'start' || action === 'rotate') {
+      note = data.started
+        ? 'Code is on. Scan it with the wallet.'
+        : 'Code is saved. This computer did not start its own announce; phones can still lend.';
+    }
+    if (action === 'stop') note = 'Sharing stopped. The code is kept.';
+    await paintCluster(data, note);
+  } catch (e) {
+    if (statusEl) statusEl.textContent = e.message;
+  }
+}
+
+window.clusterStart = () => postCluster('start');
+window.clusterRotate = () => postCluster('rotate');
+window.clusterStop = () => postCluster('stop');
+window.clusterReload = () => postCluster('reload');
+window.clusterRefresh = () => {
+  const peersEl = document.getElementById('cluster-peers');
+  if (peersEl) peersEl.textContent = 'Looking for about 4 seconds…';
+  return refreshClusterPanel(true);
 };
 
 window.showSettings = function() {
@@ -2714,24 +2857,74 @@ async function promptModelDownloadChoice() {
   let data = null;
   try { data = await window.daiMinerAPI?.onboarding?.getModelOptions(); } catch { /* fall through */ }
   // Fallback when hardware grading is unavailable: plain QVAC tier list.
+  const categories = data?.categories?.length ? data.categories : null;
   const options = data?.options?.length ? data.options : [
-    { name: 'qwen3-0.6b' }, { name: 'qwen3-1.7b' }, { name: 'qwen3-4b' }, { name: 'qwen3-8b' },
+    { name: 'qwen3-1.7b', categoryLabel: 'General Purpose', size: 'small' },
+    { name: 'qwen3-4b', categoryLabel: 'General Purpose', size: 'big' },
+    { name: 'qwen3vl-2b', categoryLabel: 'Image & Video', size: 'small' },
+    { name: 'gemma4-2b-mm', categoryLabel: 'Image & Video', size: 'big' },
+    { name: 'botpsy-0.8b-q4', categoryLabel: 'Personal Agents', size: 'small' },
+    { name: 'botpsy-0.8b', categoryLabel: 'Personal Agents', size: 'big' },
+    { name: 'medpsy-1.7b', categoryLabel: 'Narrow AI · Medicine', domain: 'medicine', domainLabel: 'Medicine', size: 'small' },
+    { name: 'medpsy-4b', categoryLabel: 'Narrow AI · Medicine', domain: 'medicine', domainLabel: 'Medicine', size: 'big' },
   ];
   if (footEl && data?.hardwareSummary) footEl.textContent = data.hardwareSummary;
 
-  listEl.innerHTML = options.map(o => {
+  const narrow = categories?.find(c => c.domains?.length) || null;
+  let narrowDomain = narrow?.domains?.[0]?.id || 'medicine';
+
+  const itemHtml = (o) => {
     const safe = String(o.name).replace(/[^a-zA-Z0-9._:-]/g, '');
     const rec  = o.name === data?.recommended ? ' <span class="mp-item-badge">RECOMMENDED</span>' : '';
-    const meta = [o.blurb, o.approxDownloadGB ? `~${o.approxDownloadGB} GB` : '']
+    const size = o.size === 'big' ? 'Big' : (o.size === 'small' ? 'Small' : '');
+    const meta = [size, o.blurb, o.approxDownloadGB ? `~${o.approxDownloadGB} GB` : '']
       .filter(Boolean).join(' · ');
     return `<div class="mp-item" onclick="window._pickDownloadModel('${safe}')">
       <div class="mp-item-icon">⬇️</div>
       <div style="flex:1;min-width:0;">
-        <div class="mp-item-name">${safe}${rec}</div>
+        <div class="mp-item-name">${o.label || safe}${rec}</div>
         ${meta ? `<div style="font-size:10px;color:#6b7280;">${meta}</div>` : ''}
       </div>
     </div>`;
-  }).join('');
+  };
+
+  const paintDownload = () => {
+    if (!narrow) {
+      let lastCategory = null;
+      listEl.innerHTML = options.map(o => {
+        const header = o.categoryLabel && o.categoryLabel !== lastCategory
+          ? `<div style="font-size:10px;color:#9ca3af;padding:8px 12px 2px;">${o.categoryLabel}</div>`
+          : '';
+        lastCategory = o.categoryLabel || lastCategory;
+        return header + itemHtml(o);
+      }).join('');
+      return;
+    }
+    const domain = narrow.domains.find(d => d.id === narrowDomain) || narrow.domains[0];
+    const suggested = [domain.small, domain.big].filter((m, i, arr) => m && arr.findIndex(x => x.name === m.name) === i);
+    listEl.innerHTML = categories.map(cat => {
+      if (cat.id !== narrow.id) {
+        const pair = [cat.small, cat.big].filter((m, i, arr) => m && arr.findIndex(x => x.name === m.name) === i);
+        return `<div style="font-size:10px;color:#9ca3af;padding:8px 12px 2px;">${cat.label}</div>${pair.map(itemHtml).join('')}`;
+      }
+      const chips = cat.domains.map(d => {
+        const on = d.id === domain.id;
+        return `<button type="button" data-dl-domain="${d.id}" style="margin:0 6px 6px 0;padding:4px 10px;border-radius:999px;border:1px solid ${on ? '#22c55e' : '#2a2a2a'};background:${on ? '#0a1f12' : 'transparent'};color:${on ? '#fff' : '#9ca3af'};font-size:11px;cursor:pointer;">${d.label}</button>`;
+      }).join('');
+      return `<div style="font-size:10px;color:#9ca3af;padding:8px 12px 2px;">${cat.label}</div>
+        <div style="padding:0 12px 4px;">${chips}</div>
+        <div style="font-size:10px;color:#6b7280;padding:0 12px 6px;">${domain.label} — suggested for this machine</div>
+        ${suggested.map(itemHtml).join('')}`;
+    }).join('');
+    listEl.querySelectorAll('[data-dl-domain]').forEach(btn => {
+      btn.onclick = (ev) => {
+        ev.stopPropagation();
+        narrowDomain = btn.getAttribute('data-dl-domain');
+        paintDownload();
+      };
+    });
+  };
+  paintDownload();
 
   return await new Promise(resolve => { window._mdlResolve = resolve; });
 }

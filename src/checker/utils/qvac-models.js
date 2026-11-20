@@ -38,21 +38,82 @@ function residentCapFor(type) {
   return RESIDENT_CAPS[type] ?? 1;
 }
 
-// RPC cluster pooling (QVAC SDK 0.21+, "clustered inference over RPC" on
-// llama.cpp's RPC backend) — split one model's layers across several of a
-// person's OWN devices so a model too big for any single one of them can
-// load at all. Off unless a topic is set: the RPC channel is unauthenticated
-// by design, so this is for a private group of devices (same env/config on
-// each), never the open miner network. These are read as defaults for
-// standalone use; startClusterWorker()/discoverClusterPeers() also take an
-// explicit cfg object (e.g. from config.json's `qvacCluster`) that overrides them.
+// RPC cluster pooling (QVAC clustered inference over RPC) — split one model's
+// layers across a person's OWN devices so a model too big for any single one
+// of them can load. Off unless a topic is set: the RPC channel is
+// unauthenticated by design, so this is a private group, never the open miner
+// network. Device admission is the SDK's: discovery returns every worker, and
+// getRpcDeviceMap names every accelerator on those workers. These are defaults
+// for standalone use; startClusterWorker()/discoverClusterPeers() also take an
+// explicit cfg object (config.json `qvacCluster`) that overrides them.
 const RPC_TOPIC        = process.env.QVAC_RPC_TOPIC || '';
 const RPC_ALLOW_REMOTE = process.env.QVAC_RPC_ALLOW_REMOTE === '1';
 const RPC_WORKER_ONLY  = process.env.QVAC_RPC_WORKER_ONLY === '1';
 const RPC_MIN_PEERS    = Math.max(1, parseInt(process.env.QVAC_RPC_MIN_PEERS || '1', 10));
-const RPC_MAX_DEVICES  = Math.min(16, Math.max(1, parseInt(process.env.QVAC_RPC_MAX_DEVICES || '8', 10))); // SDK caps a cluster at 16
 const RPC_DISCOVER_MS  = Math.max(500, parseInt(process.env.QVAC_RPC_DISCOVER_MS || '4000', 10));
 const RPC_HOST         = process.env.QVAC_RPC_HOST || undefined;
+
+// QVAC advertises only on a concrete private IPv4 (10/8, 172.16/12, 192.168/16).
+// Prefer a typical LAN address so a bridge or VPN iface does not win the announce.
+function privateIpv4() {
+  let nets;
+  try { nets = require('os').networkInterfaces(); } catch { return ''; }
+  const found = [];
+  for (const list of Object.values(nets || {})) {
+    for (const net of list || []) {
+      const family = net.family;
+      if (net.internal || (family !== 'IPv4' && family !== 4)) continue;
+      const parts = String(net.address || '').split('.');
+      if (parts.length !== 4) continue;
+      const octets = parts.map(Number);
+      if (octets.some((n, i) => String(n) !== parts[i] || n > 255)) continue;
+      const [a, b] = octets;
+      const priv = a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+      if (priv) found.push(net.address);
+    }
+  }
+  return found.find((ip) => ip.startsWith('192.168.'))
+    || found.find((ip) => ip.startsWith('10.'))
+    || found[0]
+    || '';
+}
+
+// Live settings. Env vars are the defaults; configureCluster() overlays
+// config.json, and the Settings → Devices panel updates this without a restart.
+// Model loads read it, so a phone that joined is picked up on the next load.
+const _clusterRuntime = {
+  topic: RPC_TOPIC,
+  allowRemote: RPC_ALLOW_REMOTE,
+  workerOnly: RPC_WORKER_ONLY,
+  minPeers: RPC_MIN_PEERS,
+  discoverTimeoutMs: RPC_DISCOVER_MS,
+  host: RPC_HOST,
+  autoStart: false,
+};
+
+function configureCluster(cfg = {}) {
+  if (!cfg || typeof cfg !== 'object') return clusterView();
+  if (typeof cfg.topic === 'string') _clusterRuntime.topic = cfg.topic.trim();
+  if (typeof cfg.allowRemote === 'boolean') _clusterRuntime.allowRemote = cfg.allowRemote;
+  if (typeof cfg.workerOnly === 'boolean') _clusterRuntime.workerOnly = cfg.workerOnly;
+  if (typeof cfg.autoStart === 'boolean') _clusterRuntime.autoStart = cfg.autoStart;
+  if (Number.isFinite(cfg.minPeers)) _clusterRuntime.minPeers = Math.max(1, cfg.minPeers);
+  if (Number.isFinite(cfg.discoverTimeoutMs)) _clusterRuntime.discoverTimeoutMs = Math.max(500, cfg.discoverTimeoutMs);
+  if (typeof cfg.host === 'string' && cfg.host) _clusterRuntime.host = cfg.host;
+  return clusterView();
+}
+
+function clusterView() {
+  return {
+    topic: _clusterRuntime.topic || null,
+    allowRemote: _clusterRuntime.allowRemote,
+    workerOnly: _clusterRuntime.workerOnly,
+    autoStart: _clusterRuntime.autoStart,
+    workerRunning: !!_clusterServer,
+    serverId: _clusterServer?.serverId || null,
+    url: _clusterServer?.url || null,
+  };
+}
 
 // Friendly aliases → SDK constant names. Also maps legacy Ollama model ids
 // (e.g. from an old config.json) onto the default so nothing 404s.
@@ -76,6 +137,25 @@ const ALIASES = {
   'qwen3.5-2b-mm': 'QWEN3_5_2B_MULTIMODAL_Q4_K_M',
   'qwen3.5-4b-mm': 'QWEN3_5_4B_MULTIMODAL_Q4_K_M',
   'gemma4-2b-mm':  'GEMMA4_2B_MULTIMODAL_Q4_K_M',
+  // BotPsy is not an SDK constant. QVAC loads the GGUF directly.
+  'botpsy-0.8b':    'https://huggingface.co/qvac/BotPsy-0.8B-GGUFs/resolve/main/botpsy-0.8b-q8_0.gguf',
+  'botpsy-0.8b-q8': 'https://huggingface.co/qvac/BotPsy-0.8B-GGUFs/resolve/main/botpsy-0.8b-q8_0.gguf',
+  'botpsy-0.8b-q4': 'https://huggingface.co/qvac/BotPsy-0.8B-GGUFs/resolve/main/botpsy-0.8b-q4_k_m-imat.gguf',
+  // Narrow-AI specialists. MedPsy, TranslatePsy, and KAT-Coder are SDK
+  // constants. Math and the small coder are GGUF URLs, same path as BotPsy.
+  'medpsy-1.7b':    'HEALTHCARE_1_7B_MEDICAL_Q4_K_M',
+  'medpsy-4b':      'HEALTHCARE_4B_MEDICAL_Q4_K_M',
+  'medpsy-4b-q8':   'HEALTHCARE_4B_MEDICAL_Q8_0',
+  'translatepsy-0.8b': 'TRANSLATEPSY_AFRISLM_0_8B_TRANSLATION_Q4_K_M',
+  'translatepsy-2b':   'TRANSLATEPSY_AFRISLM_2B_TRANSLATION_Q4_K_M',
+  'kat-coder-35b':     'MOE_35B_INST_IQ2_XXS',
+  'kat-coder-35b-q4':  'MOE_35B_INST_Q4_K_M',
+  'qwen-math-1.5b':    'https://huggingface.co/bartowski/Qwen2.5-Math-1.5B-Instruct-GGUF/resolve/main/Qwen2.5-Math-1.5B-Instruct-Q4_K_M.gguf',
+  'qwen-math-1.5b-q8': 'https://huggingface.co/bartowski/Qwen2.5-Math-1.5B-Instruct-GGUF/resolve/main/Qwen2.5-Math-1.5B-Instruct-Q8_0.gguf',
+  'qwen-math-7b':      'https://huggingface.co/bartowski/Qwen2.5-Math-7B-Instruct-GGUF/resolve/main/Qwen2.5-Math-7B-Instruct-Q4_K_M.gguf',
+  'qwen-coder-1.5b':    'https://huggingface.co/bartowski/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf',
+  'qwen-coder-1.5b-q8': 'https://huggingface.co/bartowski/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/Qwen2.5-Coder-1.5B-Instruct-Q8_0.gguf',
+  'qwen-coder-7b':      'https://huggingface.co/bartowski/Qwen2.5-Coder-7B-Instruct-GGUF/resolve/main/Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf',
   // Non-completion engines (llamacpp-embedding / llamacpp-decision plugins)
   'embeddinggemma-300m': 'EMBEDDINGGEMMA_300M_Q8_0',
   'laya-decision-322m':  'LAYA_MULTILINGUAL_322M_Q8_0',
@@ -102,6 +182,21 @@ const BUILTIN_MODELS = [
   { name: 'qwen3.5-2b-mm', label: 'Qwen3.5 2B Multimodal',     constant: 'QWEN3_5_2B_MULTIMODAL_Q4_K_M' },
   { name: 'qwen3.5-4b-mm', label: 'Qwen3.5 4B Multimodal',     constant: 'QWEN3_5_4B_MULTIMODAL_Q4_K_M' },
   { name: 'gemma4-2b-mm',  label: 'Gemma4 2B Multimodal',      constant: 'GEMMA4_2B_MULTIMODAL_Q4_K_M' },
+  { name: 'botpsy-0.8b-q4', label: 'BotPsy 0.8B Q4 (agents)', constant: 'botpsy-0.8b-q4' },
+  { name: 'botpsy-0.8b',    label: 'BotPsy 0.8B Q8 (agents)', constant: 'botpsy-0.8b' },
+  { name: 'medpsy-1.7b',    label: 'MedPsy 1.7B (medicine)', constant: 'HEALTHCARE_1_7B_MEDICAL_Q4_K_M' },
+  { name: 'medpsy-4b',      label: 'MedPsy 4B (medicine)',   constant: 'HEALTHCARE_4B_MEDICAL_Q4_K_M' },
+  { name: 'medpsy-4b-q8',   label: 'MedPsy 4B Q8 (medicine)', constant: 'HEALTHCARE_4B_MEDICAL_Q8_0' },
+  { name: 'qwen-math-1.5b',    label: 'Qwen2.5-Math 1.5B Q4', constant: 'qwen-math-1.5b' },
+  { name: 'qwen-math-1.5b-q8', label: 'Qwen2.5-Math 1.5B Q8', constant: 'qwen-math-1.5b-q8' },
+  { name: 'qwen-math-7b',      label: 'Qwen2.5-Math 7B',      constant: 'qwen-math-7b' },
+  { name: 'qwen-coder-1.5b',    label: 'Qwen2.5-Coder 1.5B Q4', constant: 'qwen-coder-1.5b' },
+  { name: 'qwen-coder-1.5b-q8', label: 'Qwen2.5-Coder 1.5B Q8', constant: 'qwen-coder-1.5b-q8' },
+  { name: 'qwen-coder-7b',      label: 'Qwen2.5-Coder 7B',      constant: 'qwen-coder-7b' },
+  { name: 'kat-coder-35b',    label: 'KAT-Coder 35B (coding)',    constant: 'MOE_35B_INST_IQ2_XXS' },
+  { name: 'kat-coder-35b-q4', label: 'KAT-Coder 35B Q4 (coding)', constant: 'MOE_35B_INST_Q4_K_M' },
+  { name: 'translatepsy-0.8b', label: 'TranslatePsy 0.8B', constant: 'TRANSLATEPSY_AFRISLM_0_8B_TRANSLATION_Q4_K_M' },
+  { name: 'translatepsy-2b',   label: 'TranslatePsy 2B',   constant: 'TRANSLATEPSY_AFRISLM_2B_TRANSLATION_Q4_K_M' },
   { name: 'gpt-oss-20b',   label: 'GPT-OSS 20B',               constant: 'GPT_OSS_20B_INST_Q4_K_M' },
   { name: 'qwen3-27b',     label: 'Qwen3.6 27B',               constant: 'QWEN3_6_27B_MULTIMODAL_Q4_K_XL' },
   { name: 'qwen3-35b',     label: 'Qwen3.6 35B-A3B (MoE)',     constant: 'QWEN3_6_35B_A3B_MULTIMODAL_Q4_K_M' },
@@ -275,17 +370,15 @@ function buildClusterModelConfig(peerUrls, deviceAliases) {
 // hangs past discoverTimeoutMs — an empty result just means "load solo",
 // clustering must never be a hard dependency for inference to work at all.
 async function discoverClusterPeers(cfg = {}) {
-  const topic = cfg.topic ?? RPC_TOPIC;
+  const topic = cfg.topic ?? _clusterRuntime.topic;
   if (!ENABLED || !topic) return [];
-  const timeoutMs = cfg.discoverTimeoutMs ?? RPC_DISCOVER_MS;
-  const maxDevices = Math.min(16, cfg.maxDevices ?? RPC_MAX_DEVICES);
+  const timeoutMs = cfg.discoverTimeoutMs ?? _clusterRuntime.discoverTimeoutMs;
   try {
     const sdk = await getSdk();
-    const found = await Promise.race([
-      sdk.discoverRpcServers({ topic }),
-      new Promise((resolve) => setTimeout(() => resolve([]), timeoutMs)),
-    ]);
-    return (found || []).sort((a, b) => a.url.localeCompare(b.url)).slice(0, maxDevices);
+    const found = await sdk.discoverRpcServers({ topic, timeoutMs });
+    // Same order as the SDK example: RDMA offers first, then URL. No DAI cap.
+    return (found || []).slice().sort((a, b) =>
+      Number(b.rdmaAvailable) - Number(a.rdmaAvailable) || String(a.url).localeCompare(String(b.url)));
   } catch (err) {
     console.warn(`[qvac] Cluster peer discovery failed: ${err.message}`);
     return [];
@@ -297,28 +390,31 @@ async function discoverClusterPeers(cfg = {}) {
 // device running solo, same as today. The channel is unauthenticated, so
 // allowRemote defaults off (loopback-only) unless the caller opts in.
 async function startClusterWorker(cfg = {}) {
-  const topic = cfg.topic ?? RPC_TOPIC;
+  if (cfg && typeof cfg === 'object') configureCluster(cfg);
+  const topic = _clusterRuntime.topic;
   if (!ENABLED || !topic) return null;
-  if (_clusterServer) return _clusterServer;
+  if (_clusterServer && _clusterServer.topic === topic) return _clusterServer;
   if (_clusterStarting) return _clusterStarting;
 
-  const allowRemote = cfg.allowRemote ?? RPC_ALLOW_REMOTE;
-  const host = cfg.host ?? RPC_HOST;
+  const allowRemote = _clusterRuntime.allowRemote;
+  // Advertising requires the private IPv4. Without a topic the SDK stays local.
+  const host = _clusterRuntime.host || (allowRemote ? privateIpv4() : '');
 
   _clusterStarting = (async () => {
     try {
+      if (_clusterServer) await stopClusterWorker();
       const sdk = await getSdk();
       const server = await sdk.startRpcServer({
-        host,
-        allowNonLoopbackHost: allowRemote,
-        discoveryTopic: topic,
+        ...(host ? { host } : {}),
+        allowNonLoopbackHost: !!allowRemote,
+        ...(allowRemote ? { discoveryTopic: topic } : {}),
       });
-      _clusterServer = { serverId: server.serverId, topic };
-      console.log(`[qvac] RPC cluster worker up on topic "${topic}"${allowRemote ? ' (reachable off-host)' : ' (loopback only)'}`);
+      _clusterServer = { serverId: server.serverId, topic, url: server.url || null };
+      console.log(`[qvac] RPC cluster worker up on topic "${topic}"${allowRemote ? ` at ${server.url}` : ' (loopback only)'}`);
       return _clusterServer;
     } catch (err) {
       console.warn(`[qvac] Cluster worker failed to start: ${err.message}`);
-      return null;
+      throw err;
     } finally {
       _clusterStarting = null;
     }
@@ -429,8 +525,12 @@ function resolveModel(sdk, requested) {
     return { name: raw, modelSrc: raw };
   }
 
-  // Alias (case-insensitive) → SDK constant name.
+  // Alias (case-insensitive) → SDK constant name, or a GGUF URL for models
+  // the SDK registry does not ship (BotPsy).
   const aliased = ALIASES[raw.toLowerCase()] || raw;
+  if (/^(https?:|pear:|\/|\.\/|~\/)/.test(aliased) || aliased.endsWith('.gguf')) {
+    return { name: raw, modelSrc: aliased };
+  }
 
   // Exact SDK exported constant — prefer the cached local blob when present,
   // keeping the registry descriptor as fallback (e.g. truncated cache file).
@@ -516,9 +616,9 @@ async function getModelId(requested) {
   // Layer-splitting is a completion-model concept, so skip discovery entirely
   // for the small embedding/decision engines.
   let clusterModelConfig = null;
-  if (type === 'llm' && !RPC_WORKER_ONLY && RPC_TOPIC) {
+  if (type === 'llm' && !_clusterRuntime.workerOnly && _clusterRuntime.topic) {
     const peers = await discoverClusterPeers();
-    if (peers.length >= RPC_MIN_PEERS) {
+    if (peers.length >= _clusterRuntime.minPeers) {
       try {
         const deviceMap = sdk.getRpcDeviceMap(peers);
         clusterModelConfig = buildClusterModelConfig(peers.map((pr) => pr.url), deviceMap.map((d) => d.alias));
@@ -875,13 +975,30 @@ function status() {
     loaded: [..._loaded.entries()].map(([name, e]) => ({ name, type: e.type })),
     circuitOpen: circuitOpen(),
     fault: _backendFault,
-    cluster: {
-      topic: RPC_TOPIC || null,
-      workerOnly: RPC_WORKER_ONLY,
-      workerRunning: !!_clusterServer,
-      allowRemote: RPC_ALLOW_REMOTE,
-    },
+    cluster: clusterView(),
   };
+}
+
+// Drop resident models so the next request loads again and discovers phones
+// that joined after the weights were already in memory.
+async function unloadResident(type) {
+  const dropped = [];
+  if (!ENABLED) return dropped;
+  let sdk = null;
+  try { sdk = await getSdk(); } catch { return dropped; }
+  for (const [name, entry] of [..._loaded.entries()]) {
+    if (type && entry.type !== type) continue;
+    _loaded.delete(name);
+    _loadPromises.delete(name);
+    try {
+      await sdk.unloadModel({ modelId: entry.modelId });
+      dropped.push(name);
+      console.log(`[qvac] Unloaded ${name} so the next load can use cluster peers`);
+    } catch (e) {
+      console.warn(`[qvac] Unload of ${name} failed: ${e.message}`);
+    }
+  }
+  return dropped;
 }
 
 module.exports = {
@@ -901,9 +1018,12 @@ module.exports = {
   typeForConstant,
   residentCapFor,
   buildClusterModelConfig,
+  configureCluster,
+  clusterView,
   discoverClusterPeers,
   startClusterWorker,
   stopClusterWorker,
+  unloadResident,
   estimatePromptTokens,
   estimateMessagesTokens,
   DEFAULT_MODEL,

@@ -380,7 +380,6 @@ function schedulePeerDirectoryPin() {
         host:          p.host,
         walletApiPort: p.walletApiPort,
         p2pPort:       p.p2pPort || null,
-        region:        p.region  || null,
         verified:      true,
         reachable:     true,
         methodsHash:   p.methodsHash || null,
@@ -621,8 +620,7 @@ const server = http.createServer(async (req, res) => {
     // Poll for claimable jobs.
     if (req.method === 'GET' && url.pathname === '/jobboard/open') {
       const limit  = Math.min(50, parseInt(url.searchParams.get('limit') || '10', 10));
-      const region = url.searchParams.get('region') || null;
-      return res.end(JSON.stringify({ jobs: jobBoard.listOpen({ limit, region }) }));
+      return res.end(JSON.stringify({ jobs: jobBoard.listOpen({ limit }) }));
     }
 
     // Claim a job (signed). Only a real wallet can claim so results are attributable.
@@ -780,7 +778,6 @@ const server = http.createServer(async (req, res) => {
           host: peerInfo.host,
           walletApiPort: auth.walletApiPort,
           p2pPort: auth.p2pPort,
-          region: peerInfo.region || null,
           lastSeen: Date.now(),
           signingPublicKey: peerInfo.signingPublicKey,
           methodsHash: peerInfo.methodsHash || null,
@@ -1017,7 +1014,6 @@ const server = http.createServer(async (req, res) => {
         host: p.host,
         walletApiPort: p.walletApiPort,
         p2pPort: p.p2pPort,
-        region: p.region,
         lastSeen: p.lastSeen,
         verified: true,
         reachable: true,

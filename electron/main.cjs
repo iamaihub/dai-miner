@@ -282,7 +282,6 @@ function sendStatusUpdate() {
       peers: (minerNode.peers || []).length,
       model: minerNode.config?.model || null,
       inferenceMode: minerNode.config?.inferenceMode || 'AUTO',
-      region: minerNode.myLocation?.country || minerNode.config?.region || null,
     };
 
     mainWindow.webContents.send('status', status);
@@ -880,9 +879,8 @@ ipcMain.handle('onboarding:get-model-options', async () => {
     hardwareSummary: describeHardware(opts.hardware),
     hardware: opts.hardware,
     recommended: opts.recommended,
-    // Unique, smallest → largest (tiers can collapse on small machines).
-    options: [opts.small, opts.medium, opts.large].filter(
-      (t, i, arr) => arr.findIndex(x => x.name === t.name) === i),
+    categories: opts.categories,
+    options: opts.options,
   };
 });
 

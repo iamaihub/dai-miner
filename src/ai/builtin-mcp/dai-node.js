@@ -95,17 +95,16 @@ export function buildDaiNodePack(getConfig = () => ({})) {
     },
     {
       name: 'get_wallet_balance',
-      description: "DAI + stablecoin balance for one address. Call get_status first if you need this node's own wallet address.",
+      description: "DAI + stablecoin balance for an address. Omit address for this node's own wallet.",
       inputSchema: {
         type: 'object',
         properties: { address: { type: 'string' } },
-        required: ['address'],
       },
       cardId: 'dai/get_wallet_balance',
       async run(args) {
         const address = str(args.address);
-        if (!address) throw new Error('address required');
-        return compact(await fetchJson(`${base()}/api/wallet/balance?address=${encodeURIComponent(address)}`));
+        const qs = address ? `?address=${encodeURIComponent(address)}` : '';
+        return compact(await fetchJson(`${base()}/api/wallet/balance${qs}`));
       },
     },
     {
@@ -178,7 +177,7 @@ export function buildDaiNodePack(getConfig = () => ({})) {
           const s = await fetchJson(`${peerBase}/status`, { timeoutMs: 4000 });
           return {
             host: p.host, wallet: p.wallet,
-            model: s.model, chainHeight: s.chainHeight, region: s.region,
+            model: s.model, chainHeight: s.chainHeight,
             installedHfDatasets: s.installedHfDatasets || [],
             installedHfModels: s.installedHfModels || [],
             capabilities: s.capabilities || [],

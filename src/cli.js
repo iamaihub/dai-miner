@@ -99,8 +99,6 @@ async function main() {
     }
 
     const defaultConfig = getDefaultConfig();
-    // Add a couple of extra fields that the old init used to include
-    defaultConfig.region = 'auto';
 
     saveConfig(defaultConfig, finalPath);
 
@@ -112,11 +110,6 @@ async function main() {
     console.log(`✅ Created ${locationType} at:`, finalPath);
     console.log('   Edit it and replace YOUR_SOLANA_ADDRESS_HERE with your wallet.');
     console.log('   Add your bootnodes under the "bootnodes" array to sync with the real network.');
-  } 
-  else if (cmd === 'demo' || cmd === 'demo:geo') {
-    console.log('Starting geographic preference demo...\n');
-    const { execSync } = await import('child_process');
-    execSync('node scripts/demo-geo-race.js', { stdio: 'inherit' });
   } 
   else if (cmd === 'landing' || cmd === 'serve') {
     console.log('Serving landing page at http://localhost:4321\n');
@@ -170,23 +163,6 @@ async function main() {
 
     console.log(`✅ inferenceMode set to "${newMode}" in ${targetPath}`);
     console.log('Restart the miner for the change to take effect.');
-  } 
-  else if (cmd === 'sync-methods' || cmd === 'sync-signals') {
-    console.log('Syncing verified signals from the network...\n');
-    (async () => {
-      const { getMethodsManager } = await import('./signals/methods-manager.js');
-      const mgr = await getMethodsManager();
-      const before = mgr.getStatus();
-      console.log(`Before: ${before.count} methods (hash=${before.hash})`);
-
-      const result = await mgr.sync();
-      const after = mgr.getStatus();
-
-      console.log(`\n✅ Synced. Now using ${after.count} methods`);
-      console.log(`   Hash: ${after.hash}`);
-      console.log(`   Source: ${after.source}`);
-      console.log(`   Age: ${after.ageMinutes ?? '?'} minutes`);
-    })();
   } 
   else if (cmd === 'wallet') {
     const sub = args[1] || 'list';
@@ -273,7 +249,6 @@ async function main() {
           });
         }
 
-        console.log(`Current signals:       ${status.methodsCount} (hash: ${status.methodsHash})`);
         console.log(`Chain height:          ${status.chainHeight}`);
       } catch (e) {
         console.error('Could not load status:', e.message);
@@ -287,9 +262,7 @@ async function main() {
   dai-miner wallet <subcmd>    Wallet commands: create | list | balance <addr> | send <from> <to> <amt>
   dai-miner init [--global]    Create default config (local by default when in source tree)
   dai-miner status             Show protection stats, reputation, and submission history
-  dai-miner sync-methods       Force refresh of verified signals from iamai.kg
   dai-miner set-mode <mode>    Change inference mode (auto|gpu|cpu)
-  dai-miner demo               Run geographic job preference demo
   dai-miner landing            Serve the promotional landing page
   dai-miner config             Show resolved config location and source
 `);

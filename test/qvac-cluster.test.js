@@ -10,7 +10,7 @@
 import { describe, it, expect } from 'vitest';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
-const { buildClusterModelConfig } = require('../src/checker/utils/qvac-models.js');
+const { buildClusterModelConfig, configureCluster, clusterView } = require('../src/checker/utils/qvac-models.js');
 
 describe('buildClusterModelConfig', () => {
   it('builds an equal-weight layer-split config for N peers', () => {
@@ -41,5 +41,30 @@ describe('buildClusterModelConfig', () => {
   it('returns null when peers and device aliases are mismatched', () => {
     expect(buildClusterModelConfig(['a'], ['x', 'y'])).toBeNull();
     expect(buildClusterModelConfig(['a', 'b'], ['x'])).toBeNull();
+  });
+});
+
+describe('configureCluster', () => {
+  it('keeps the topic a later model load will discover on', () => {
+    const before = clusterView();
+    configureCluster({
+      topic: 'desk-phone-test',
+      allowRemote: true,
+      workerOnly: false,
+      autoStart: true,
+    });
+    expect(clusterView()).toMatchObject({
+      topic: 'desk-phone-test',
+      allowRemote: true,
+      workerOnly: false,
+      autoStart: true,
+      workerRunning: false,
+    });
+    configureCluster({
+      topic: before.topic || '',
+      allowRemote: before.allowRemote,
+      workerOnly: before.workerOnly,
+      autoStart: false,
+    });
   });
 });

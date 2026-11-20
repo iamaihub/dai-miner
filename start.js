@@ -58,9 +58,8 @@ async function warmUpQvac(model, apiPort = 3456) {
   }
 }
 
-// First-run model picker: ask which LLM to download, with three options graded
-// relative to the detected hardware (a "large" model on an 8 GB laptop differs
-// from "large" on a 128 GB workstation). No-op once chosen or without a TTY.
+// First-run model picker: four categories, each with a small and a big model
+// that fits this machine. No-op once chosen or without a TTY.
 async function chooseModelFirstRun(config, configPath) {
   if (config.modelSelected || !process.stdin.isTTY) return config.model || 'qwen3-1.7b';
   try {
@@ -69,18 +68,20 @@ async function chooseModelFirstRun(config, configPath) {
     const { getModelOptions, describeHardware } = await import('./src/setup/model-picker.js');
     const opts = getModelOptions();
 
-    // Unique models, smallest → largest (tiers can collapse on small machines).
-    const ordered = [opts.small, opts.medium, opts.large];
-    const choices = [];
-    const seen = new Set();
-    for (const t of ordered) { if (!seen.has(t.name)) { seen.add(t.name); choices.push(t); } }
+    const choices = opts.options;
     const recIdx = Math.max(0, choices.findIndex(c => c.name === opts.recommended));
 
     console.log('\nWhich AI model should the miner download and run?');
     console.log('  Detected: ' + describeHardware(opts.hardware) + '\n');
+    let lastCategory = '';
     choices.forEach((c, i) => {
+      if (c.categoryLabel !== lastCategory) {
+        lastCategory = c.categoryLabel;
+        console.log(`  ${c.categoryLabel}`);
+      }
       const rec = i === recIdx ? '  ← recommended' : '';
-      console.log(`  ${i + 1}) ${c.tier.toUpperCase().padEnd(6)} ${c.label.padEnd(12)} ~${c.approxDownloadGB} GB${rec}`);
+      const size = (c.size || '').toUpperCase().padEnd(5);
+      console.log(`  ${i + 1}) ${size} ${c.label}  ~${c.approxDownloadGB} GB${rec}`);
       console.log(`       ${c.blurb}`);
     });
 

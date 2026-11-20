@@ -26,11 +26,3 @@ curl -fsSL https://miner.iamai.kg/scripts/easy-start.sh | bash
 ```
 
 No engine to install — QVAC runs in-process. On ARM (Pi) or no-GPU machines it runs in CPU mode.
-
-## Geographic Advantage
-
-Once running, the miner automatically measures its latency to the world.
-
-Jobs from nearby regions will naturally be more attractive for you to compete on (you'll see them earlier and finish faster).
-
-This is fair and creates better user experience globally.

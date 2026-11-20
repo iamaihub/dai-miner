@@ -70,22 +70,17 @@ async function waitFor(predicate, timeoutMs = 45000, interval = 400) {
 async function runTests() {
   const jobQueue = new JobQueue();
 
-  // === Start 3 miners in different regions for racing + bad result tests ===
   const miners = [
     new DAIMinerNode({ wallet: 'int-miner-us',   computeEnabled: true, inferenceMode: 'cpu' }),
     new DAIMinerNode({ wallet: 'int-miner-eu',   computeEnabled: true, inferenceMode: 'cpu' }),
     new DAIMinerNode({ wallet: 'int-miner-asia', computeEnabled: true, inferenceMode: 'cpu' }),
   ];
 
-  miners[0].myLocation = { country: 'US' };
-  miners[1].myLocation = { country: 'DE' };
-  miners[2].myLocation = { country: 'SG' };
-
   for (const m of miners) {
     m.jobQueue = jobQueue;
     await m.start();
   }
-  console.log('Started 3 test miners (US, EU, Asia).\n');
+  console.log('Started 3 test miners.\n');
 
   // === Test 1 & 2: Real computation (realDAIUsed) + multiple miners racing ===
   console.log('Test: Real computation + racing...');
