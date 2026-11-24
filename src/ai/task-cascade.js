@@ -20,6 +20,7 @@
  * this cascade is what actually fills MCP schemas for multi-intent requests.
  */
 
+import { presentChatReply } from './chat-reply.js';
 import { needsDatasetLookup, searchDatasets, disambiguateDataset } from '../datasets/hf-dataset-search.js';
 import { needsHfModelLookup, searchModelsWithFallback, pickRelevantModels, formatModelSuggestions } from '../datasets/hf-model-search.js';
 import * as hfDatasetManager from '../datasets/hf-dataset-manager.js';
@@ -705,6 +706,7 @@ export function buildAggregatorPrompt(userMessage, blocks, plan = {}) {
     'Specialist tools/skills/MCPs already ran. Synthesize ONE clear final answer for the user.',
     'Rules:',
     '- Write clear Markdown. Be specific — names, numbers, prices, links, temperatures.',
+    '- The answer is prose. Do not return the specialist payload as JSON, CSV, YAML, or XML unless the user asked for that format.',
     '- When multiple shops/MCPs returned data, compare them (price, availability, description).',
     '- When a step searched the web and another asked for an image, include the facts AND a ready-to-use image prompt that embeds the key numbers (e.g. temperature).',
     '- If a specialist failed, work with what you have and note the gap briefly.',
@@ -722,8 +724,8 @@ async function aggregateResults(userMessage, results, priorContext, runners, pla
   // Fast path: single successful text-like result
   if (results.length === 1 && results[0].ok) {
     const r = results[0];
-    if (r.kind === 'hf-model' && r.output?.suggestion) return r.output.suggestion;
-    if (r.kind === 'llm-generate' && typeof r.output === 'string') return r.output;
+    if (r.kind === 'hf-model' && r.output?.suggestion) return presentChatReply(userMessage, r.output.suggestion);
+    if (r.kind === 'llm-generate' && typeof r.output === 'string') return presentChatReply(userMessage, r.output);
     if (r.kind === 'mcp' && typeof r.output === 'string') {
       // Still synthesize for polish
     }
@@ -750,16 +752,16 @@ async function aggregateResults(userMessage, results, priorContext, runners, pla
       [{ role: 'system', content: system }, { role: 'user', content: user }],
       { model: runners.model, timeoutMs: 60_000 },
     );
-    if (reply && String(reply).trim()) return String(reply).trim();
+    if (reply && String(reply).trim()) return presentChatReply(userMessage, String(reply).trim());
   } catch { /* fall through */ }
 
-  // Fallback without LLM
-  return results.map(r => {
+  // Fallback without LLM. Still prose unless the user asked for a data format.
+  return presentChatReply(userMessage, results.map(r => {
     if (!r.ok) return `**${r.id}** failed: ${r.error}`;
     if (r.kind === 'hf-model') return r.output?.suggestion || '';
     if (typeof r.output === 'string') return r.output;
     return `**${r.id}**\n\`\`\`json\n${JSON.stringify(r.output, null, 2).slice(0, 3000)}\n\`\`\``;
-  }).filter(Boolean).join('\n\n---\n\n') || 'No results from the task cascade.';
+  }).filter(Boolean).join('\n\n---\n\n') || 'No results from the task cascade.');
 }
 
 /** Convert a cascade plan into a list of fan-out job descriptors (for multi-miner). */

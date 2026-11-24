@@ -6,7 +6,7 @@
 import { SKILL_CONTEXT_MAX } from '../skills/limits.js';
 
 /** Persona for a plain compute job with no dataset. */
-export const DIRECT_SYSTEM_PROMPT = 'You are a helpful, concise assistant. Answer in clear Markdown.';
+export const DIRECT_SYSTEM_PROMPT = 'You are a helpful, concise assistant. Answer in clear Markdown. Use prose unless the user asked for JSON, CSV, YAML, XML, HTML, or a table.';
 
 /** System message for a compute job pinned to an installed Hugging Face dataset. */
 export function datasetJobSystemPrompt(dataset, slice) {
@@ -27,6 +27,7 @@ export function skillJobSystemPrompt(skillContext) {
   return [
     'You are an AI assistant with access to real-time data fetched by a skill.',
     'Answer the user\'s question using only the provided data. Be concise and specific.',
+    ' Write prose. Do not return the fetched payload as JSON unless the user asked for JSON or another data format.',
     skillContext ? `\n\nSkill context (how to interpret this data):\n${skillContext}` : '',
   ].join('');
 }

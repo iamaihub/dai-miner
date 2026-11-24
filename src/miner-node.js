@@ -92,6 +92,7 @@ import { pickToolsForMessage } from './ai/mcp-router.js';
 import { assignMcpToPeers, callPeerMcp } from './ai/mcp-disperse.js';
 import { searchCards } from './ai/mcp-catalog.js';
 import { executeTaskCascade, runOneTask } from './ai/task-cascade.js';
+import { presentChatReply, presentProfile, jobPrompt } from './ai/chat-reply.js';
 import { planCatalogCascade } from './ai/mcp-planner.js';
 import {
   materializeAttachments, applyAttachmentsToMessages, MAX_ATTACHMENT_BYTES,
@@ -178,7 +179,7 @@ function _skillLlmSystemPrompt(skillId, skillContext) {
     'You are a helpful assistant. Answer the user\'s question using the real-time data provided.',
     'Rules:',
     '- Write in clear, human-readable Markdown (use ## headings, **bold**, bullet points).',
-    '- NEVER output raw JSON or code blocks in your answer.',
+    '- Do not output raw JSON unless the user asked for JSON or another data format.',
     '- Be specific — include names, numbers, dates, URLs, and post titles from the data.',
     '- If the user asks a follow-up about "the latest" or "a link", use the most recent item in the data.',
   ];
@@ -2508,6 +2509,7 @@ export class DAIMinerNode {
             const plaintext = decryptKey ? extractReplyText({ profile }, decryptKey) : '';
             if (plaintext) profile = { ...profile, computeOutput: plaintext };
           }
+          profile = presentProfile(jobPrompt(rec.job), profile);
           // Return shape friendly for frontends: verdict + profile + evidence (signals etc)
           return res.end(JSON.stringify({
             jobId: rec.id,
@@ -3175,7 +3177,8 @@ export class DAIMinerNode {
               }
               const reply = await qvac.chat(messages, { model, timeLimit: 90_000 });
               if (reply == null) return sendJson(503, { error: `Model "${model}" produced no output (QVAC unavailable)` });
-              return sendJson(200, { model, created_at: new Date().toISOString(), message: { role: 'assistant', content: reply }, done: true });
+              const shown = presentChatReply(typeof lastUser?.content === 'string' ? lastUser.content : '', reply);
+              return sendJson(200, { model, created_at: new Date().toISOString(), message: { role: 'assistant', content: shown }, done: true });
             }
 
             // /api/generate
@@ -3526,6 +3529,8 @@ export class DAIMinerNode {
         let body = '';
         req.on('data', c => body += c);
         req.on('end', async () => {
+          let message = '';
+          const say = (text) => presentChatReply(message, text);
           try {
             const {
               message: rawMessage, history = [], model: reqModel, private: isPrivate = false,
@@ -3533,7 +3538,7 @@ export class DAIMinerNode {
               skipHistoryMatch = false, attachments: rawAttachments = null,
             } = JSON.parse(body);
             // Materialize chat attachments early (text inline + image paths for vision models).
-            let message = (rawMessage || '').trim();
+            message = (rawMessage || '').trim();
             let askAttachments = null;
             let askHasImages = false;
             if (Array.isArray(rawAttachments) && rawAttachments.length) {
@@ -3566,7 +3571,7 @@ export class DAIMinerNode {
                 if (repeat?.reply) {
                   return res.end(JSON.stringify({
                     type: 'chat',
-                    message: repeat.reply,
+                    message: say(repeat.reply),
                     fromChainHistory: true,
                     jobId: repeat.jobId,
                     matchScore: repeat.score,
@@ -3589,7 +3594,7 @@ export class DAIMinerNode {
                 || [...history].reverse().find(h => h._skillMemory)?._skillMemory;
               if (mem) {
                 const reply = _answerFromSkillMemory(message, mem);
-                if (reply) return res.end(JSON.stringify({ type: 'chat', message: reply, skill: mem.skillId, fromMemory: true, fromChain: !!mem.fromChain }));
+                if (reply) return res.end(JSON.stringify({ type: 'chat', message: say(reply), skill: mem.skillId, fromMemory: true, fromChain: !!mem.fromChain }));
               }
             }
 
@@ -3628,7 +3633,7 @@ export class DAIMinerNode {
                     [{ role: 'system', content: systemContent }, { role: 'user', content: userContent }],
                     { model: selModel, timeoutMs: 40_000 },
                   );
-                  const reply = llmReply.trim() || _formatSkillOutputFallback(route.skillId, output);
+                  const reply = say(llmReply.trim() || _formatSkillOutputFallback(route.skillId, output));
                   return res.end(JSON.stringify({
                     type: 'chat', message: reply, skill: route.skillId,
                     skillMemory: { skillId: route.skillId, output, at: Date.now() },
@@ -3656,7 +3661,7 @@ export class DAIMinerNode {
                     [{ role: 'system', content: systemContent }, { role: 'user', content: message }],
                     { model: selModel, timeoutMs: 40_000 },
                   )).trim();
-                  if (llmReply) return res.end(JSON.stringify({ type: 'chat', message: llmReply, skill: route.skillId }));
+                  if (llmReply) return res.end(JSON.stringify({ type: 'chat', message: say(llmReply), skill: route.skillId }));
                 } catch (e) {
                   console.warn('[chat/ask] inline knowledge-skill error:', e.message);
                   // fall through to job routing (will fail there too, but keeps a consistent error shape)
@@ -3673,14 +3678,14 @@ export class DAIMinerNode {
             // context for a second LLM call. Falls through to plain chat if generation fails.
             if (route.type === 'sequence') {
               const seq = await this._answerSequence(route, { model: reqModel, message });
-              if (seq) return res.end(JSON.stringify({ type: 'chat', message: seq.reply, sequence: { skillId: seq.skillId } }));
+              if (seq) return res.end(JSON.stringify({ type: 'chat', message: say(seq.reply), sequence: { skillId: seq.skillId } }));
               // falls through to plain chat below (generation or skill step produced nothing)
             }
 
             // ── Hugging Face model suggestion (video/image/audio generation) ───────
             if (route.type === 'hf-model') {
               const hf = await this._answerHfModel(route, { model: reqModel });
-              if (hf) return res.end(JSON.stringify({ type: 'chat', message: hf.reply, hfModels: hf.hfModels }));
+              if (hf) return res.end(JSON.stringify({ type: 'chat', message: say(hf.reply), hfModels: hf.hfModels }));
               // falls through to plain chat below
             }
 
@@ -3707,7 +3712,7 @@ export class DAIMinerNode {
                   ].join(' '),
                 }));
               }
-              if (ds) return res.end(JSON.stringify({ type: 'chat', message: ds.reply, dataset: ds.datasetId, ...(ds._fromPeer ? { _fromPeer: true } : {}) }));
+              if (ds) return res.end(JSON.stringify({ type: 'chat', message: say(ds.reply), dataset: ds.datasetId, ...(ds._fromPeer ? { _fromPeer: true } : {}) }));
               // no relevant dataset found, or it produced nothing — fall through to plain chat
             }
 
@@ -3737,7 +3742,7 @@ export class DAIMinerNode {
                 }
                 return res.end(JSON.stringify({
                   type: 'chat',
-                  message: reply || 'Task cascade produced no output.',
+                  message: say(reply || 'Task cascade produced no output.'),
                   cascade: true,
                   tasks: true,
                   jobs: (results || []).map(r => ({
@@ -3758,7 +3763,7 @@ export class DAIMinerNode {
                   const selModel = reqModel || this.config.model;
                   const { reply, results } = await this._runTaskCascade(route.tasks, { model: selModel, message });
                   return res.end(JSON.stringify({
-                    type: 'chat', message: reply || 'Cascade produced no output.',
+                    type: 'chat', message: say(reply || 'Cascade produced no output.'),
                     cascade: true, tasks: true,
                     jobs: (results || []).map(r => ({ id: r.id, kind: r.kind, skillId: r.skillId, ok: r.ok })),
                   }));
@@ -3794,10 +3799,11 @@ export class DAIMinerNode {
                   [{ role: 'user', content: synthPrompt }],
                   { model: selModel, timeoutMs: 40_000 },
                 );
-                const reply = synthReply || results.map(r => JSON.stringify(r.output)).join('\n\n');
+                const reply = say(synthReply || results.map(r => presentChatReply(message, typeof r.output === 'string' ? r.output : JSON.stringify(r.output))).join('\n\n'));
                 return res.end(JSON.stringify({ type: 'chat', message: reply, cascade: true, jobs: results }));
               } catch {
-                return res.end(JSON.stringify({ type: 'chat', message: results.map(r => JSON.stringify(r.output, null, 2)).join('\n\n'), cascade: true, jobs: results }));
+                const reply = say(results.map(r => presentChatReply(message, typeof r.output === 'string' ? r.output : JSON.stringify(r.output))).join('\n\n'));
+                return res.end(JSON.stringify({ type: 'chat', message: reply, cascade: true, jobs: results }));
               }
             }
 
@@ -3810,7 +3816,7 @@ export class DAIMinerNode {
                 if (known && !known.local) {
                   const peerReply = await this._relayToPeerChat(message, history, reqModel);
                   if (peerReply) {
-                    return res.end(JSON.stringify({ type: 'chat', message: peerReply, _fromPeer: true, model: reqModel }));
+                    return res.end(JSON.stringify({ type: 'chat', message: say(peerReply), _fromPeer: true, model: reqModel }));
                   }
                 }
               } catch { /* fall through to local attempt */ }
@@ -3841,11 +3847,11 @@ export class DAIMinerNode {
                   ],
                   { model: selModel, timeoutMs: 40_000 },
                 )) || reply;
-                return res.end(JSON.stringify({ type: 'chat', message: retryReply, skill: 'web_search' }));
+                return res.end(JSON.stringify({ type: 'chat', message: say(retryReply), skill: 'web_search' }));
               } catch { /* fall through to original reply */ }
             }
 
-            return res.end(JSON.stringify({ type: 'chat', message: reply }));
+            return res.end(JSON.stringify({ type: 'chat', message: say(reply) }));
           } catch (err) {
             const isUnavailable = err.name === 'AbortError' || err.name === 'TimeoutError'
               || (err.message || '').toLowerCase().includes('timeout')
@@ -3856,7 +3862,7 @@ export class DAIMinerNode {
               try {
                 const peerReply = await this._relayToPeerChat(message, history);
                 if (peerReply) {
-                  return res.end(JSON.stringify({ type: 'chat', message: peerReply, _fromPeer: true }));
+                  return res.end(JSON.stringify({ type: 'chat', message: say(peerReply), _fromPeer: true }));
                 }
               } catch { /* ignore */ }
 
@@ -3865,7 +3871,7 @@ export class DAIMinerNode {
                 const extMessages = [...history, { role: 'user', content: message }];
                 const ext = await tryExternalProviders(this.config, extMessages);
                 if (ext) {
-                  return res.end(JSON.stringify({ type: 'chat', message: ext.reply, _fromProvider: ext.providerId }));
+                  return res.end(JSON.stringify({ type: 'chat', message: say(ext.reply), _fromProvider: ext.providerId }));
                 }
               } catch { /* ignore */ }
             }
@@ -3881,7 +3887,7 @@ export class DAIMinerNode {
                   ? 'Local LLM is unavailable. Private mode keeps this conversation on your device only — switch to Public to allow a peer miner or configured AI provider to answer instead.'
                   : 'Local LLM is unavailable and no peer miner or configured AI provider could be reached. Try again shortly.')
               : 'Something went wrong. Please try again.';
-            res.end(JSON.stringify({ type: 'chat', message: fallback }));
+            res.end(JSON.stringify({ type: 'chat', message: say(fallback) }));
           }
         });
         return;
@@ -7508,7 +7514,7 @@ export class DAIMinerNode {
     for (let round = 0; round < 3; round++) {
       const raw = await this._llmChat(convo, { model, timeoutMs });
       const call = this._parseToolCall(raw);
-      if (!call) return raw; // model answered in prose
+      if (!call) return presentChatReply(userText, raw);
       convo.push({ role: 'assistant', content: raw });
       let result;
       try {
@@ -7524,7 +7530,11 @@ export class DAIMinerNode {
       });
     }
     // Ran out of rounds — force a final prose answer.
-    return this._llmChat([...convo, { role: 'user', content: 'Answer now in prose using what you have. Do not output JSON.' }], { model, timeoutMs });
+    const finalText = await this._llmChat(
+      [...convo, { role: 'user', content: 'Answer now in prose using what you have. Do not output JSON unless the user asked for it.' }],
+      { model, timeoutMs },
+    );
+    return presentChatReply(userText, finalText);
   }
 
   _lastUserText(messages) {
@@ -8521,6 +8531,7 @@ export class DAIMinerNode {
       const plaintext = decryptKey ? extractReplyText({ profile }, decryptKey) : '';
       if (plaintext) profile = { ...profile, computeOutput: plaintext };
     }
+    profile = presentProfile(jobPrompt(rec), profile);
     const done = status === 'done' && !!(profile || rec?.verdict);
     return {
       statusBody: {
@@ -8672,6 +8683,7 @@ export class DAIMinerNode {
   // (see _runTaskCascade's own comment). Omitted by the free, uncapped
   // Private-mode /api/chat caller.
   async _routeComputePrompt(prompt, model, budget = {}) {
+    const deliver = (out) => (out?.reply ? { ...out, reply: presentChatReply(prompt, out.reply) } : out);
     let route;
     try { route = await this._routeMessage(prompt); } catch { return null; }
     if (!route) return null;
@@ -8680,7 +8692,7 @@ export class DAIMinerNode {
     if (route.type === 'tasks' && route.tasks) {
       try {
         const { reply, results, tokensUsed, contributions } = await this._runTaskCascade(route.tasks, { model, message: prompt, ...budget });
-        if (reply) return { reply, skillId: 'task-cascade', results, tokensUsed, contributions };
+        if (reply) return deliver({ reply, skillId: 'task-cascade', results, tokensUsed, contributions });
       } catch (e) {
         console.warn('[compute] task cascade failed:', e.message);
       }
@@ -8690,7 +8702,7 @@ export class DAIMinerNode {
     if (route.type === 'cascade' && route.tasks) {
       try {
         const { reply, tokensUsed, contributions } = await this._runTaskCascade(route.tasks, { model, message: prompt, ...budget });
-        if (reply) return { reply, skillId: 'cascade', tokensUsed, contributions };
+        if (reply) return deliver({ reply, skillId: 'cascade', tokensUsed, contributions });
       } catch { /* fall through */ }
     }
     if (route.type === 'cascade' && route.jobs?.length) {
@@ -8704,22 +8716,22 @@ export class DAIMinerNode {
           reason: route.reason,
         };
         const { reply, tokensUsed, contributions } = await this._runTaskCascade(plan, { model, message: prompt, ...budget });
-        if (reply) return { reply, skillId: 'cascade', tokensUsed, contributions };
+        if (reply) return deliver({ reply, skillId: 'cascade', tokensUsed, contributions });
       } catch { /* fall through */ }
     }
     if (route.type === 'sequence') {
       const seq = await this._answerSequence(route, { model, message: prompt });
-      return seq ? { reply: seq.reply, skillId: seq.skillId, tokensUsed: seq.tokensUsed } : null;
+      return seq ? deliver({ reply: seq.reply, skillId: seq.skillId, tokensUsed: seq.tokensUsed }) : null;
     }
     if (route.type === 'hf-model') {
       const hf = await this._answerHfModel(route, { model });
-      return hf ? { reply: hf.reply, skillId: hf.skillId, tokensUsed: hf.tokensUsed } : null;
+      return hf ? deliver({ reply: hf.reply, skillId: hf.skillId, tokensUsed: hf.tokensUsed }) : null;
     }
     if (route.type === 'dataset') {
       // A job has no human to approve a download mid-run — needsDownload just
       // means "can't answer this way", same as any other unmatched route.
       const ds = await this._answerDataset(route, { model, message: prompt, history: [] });
-      return (ds && !ds.needsDownload) ? { reply: ds.reply, skillId: ds.skillId, tokensUsed: ds.tokensUsed } : null;
+      return (ds && !ds.needsDownload) ? deliver({ reply: ds.reply, skillId: ds.skillId, tokensUsed: ds.tokensUsed }) : null;
     }
     if (route.type !== 'skill') return null;
     const skillEntry = skillsManager.getSkill(route.skillId);
@@ -8736,7 +8748,7 @@ export class DAIMinerNode {
           [{ role: 'system', content: systemContent }, { role: 'user', content: userContent }],
           { model, timeoutMs: 40_000 },
         );
-        const reply = (llmReply || '').trim() || _formatSkillOutputFallback(route.skillId, output);
+        const reply = presentChatReply(prompt, (llmReply || '').trim() || _formatSkillOutputFallback(route.skillId, output));
         const tokensUsed = Math.max(skillTokens, Math.ceil((prompt.length + reply.length) / 4));
         return { reply, skillId: route.skillId, skillOutput: output, tokensUsed };
       }
@@ -8747,7 +8759,7 @@ export class DAIMinerNode {
           [{ role: 'system', content: systemContent }, { role: 'user', content: prompt }],
           { model, timeoutMs: 40_000 },
         )).trim();
-        if (reply) return { reply, skillId: route.skillId, skillOutput: null, tokensUsed: Math.ceil((prompt.length + reply.length) / 4) };
+        if (reply) return deliver({ reply, skillId: route.skillId, skillOutput: null, tokensUsed: Math.ceil((prompt.length + reply.length) / 4) });
       }
     } catch (e) {
       console.warn(`[compute-route] skill ${route.skillId} failed — falling back to raw LLM:`, e.message);
@@ -8869,11 +8881,12 @@ export class DAIMinerNode {
           hardTokenCap: hardCap,
         });
         if (usage == null || usage.text == null) throw new Error(`Model "${model}" produced no output on this miner`);
+        const shown = presentChatReply(prompt, usage.text);
 
         const { encrypt: encReply, encPub: replyEncPub } = this._chatVisibility(job);
         const profile = encReply
-          ? { computeOutput: null, replyCipher: sealChat(replyEncPub, usage.text), encrypted: true, model, dataset: datasetUsed }
-          : { computeOutput: usage.text, model, dataset: datasetUsed };
+          ? { computeOutput: null, replyCipher: sealChat(replyEncPub, shown), encrypted: true, model, dataset: datasetUsed }
+          : { computeOutput: shown, model, dataset: datasetUsed };
 
         return {
           type: 'compute',
@@ -8996,13 +9009,17 @@ export class DAIMinerNode {
             const systemContent = skillJobSystemPrompt(skillCtx);
             const dataStr = JSON.stringify(output, null, 2).slice(0, 10000);
             const userContent = `Fetched data:\n\`\`\`json\n${dataStr}\n\`\`\`\n\nUser question: ${userQuestion}`;
-            nlResponse = (await this._llmChat(
+            nlResponse = presentChatReply(userQuestion, (await this._llmChat(
               [
                 { role: 'system', content: systemContent },
                 { role: 'user', content: userContent },
               ],
               { timeoutMs: 30_000 },
-            )) || null;
+            )) || '');
+            if (!nlResponse && output != null) {
+              const raw = typeof output === 'string' ? output : JSON.stringify(output);
+              nlResponse = presentChatReply(userQuestion, raw);
+            }
             if (nlResponse) console.log(`[DAI-Miner] LLM analysis done for job ${job.id} (${nlResponse.length} chars)`);
           } catch (e) {
             console.warn(`[DAI-Miner] LLM analysis skipped for job ${job.id}:`, e.message);
@@ -9188,9 +9205,10 @@ export class DAIMinerNode {
             shouldStop: () => this._supersededJobs.has(job.id),  // bail if a peer wins mid-generation
           });
           if (usage == null || usage.text == null) throw new Error(`Model "${model}" produced no output on this miner (QVAC unavailable)`);
-          reply = usage.text;
+          reply = presentChatReply(prompt, usage.text);
           tokensUsed = usage.totalTokens || job.estimatedTokens || estimateTokens(0, null);
         }
+        reply = presentChatReply(prompt, reply);
 
         // First-result-wins: a peer published the winning result while we were
         // generating. Discard ours — the requester already has the answer (adopted
