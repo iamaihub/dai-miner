@@ -26,9 +26,16 @@ jobs:
       fail-fast: false        # one platform failing shouldn't kill the others
       matrix:
         include:
-          - os: ubuntu-latest
+          # One runner per arch. The QVAC 0.24 worker bundle embeds the
+          # native addons of the machine that built it, so an x64 runner
+          # cannot produce a working arm64 installer (or the reverse).
+          - os: ubuntu-24.04
             platform: linux
-          - os: macos-15       # Apple Silicon runner — builds arm64 + x64 dmg
+          - os: ubuntu-24.04-arm
+            platform: linux
+          - os: macos-15
+            platform: mac
+          - os: macos-15-intel
             platform: mac
           - os: windows-latest
             platform: win
@@ -94,7 +101,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: dai-miner-${{ matrix.platform }}
+          name: dai-miner-${{ matrix.platform }}-${{ runner.arch }}
           path: out/*
           if-no-files-found: error
           retention-days: 14

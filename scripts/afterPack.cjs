@@ -4,11 +4,12 @@
 /**
  * electron-builder afterPack hook.
  *
- * 1) Copy qvac worker entry into app.asar.unpacked/qvac/ on every platform.
- *    We intentionally do NOT put `qvac/**` in package.json `files` + `asarUnpack`
- *    together — that double-hardlinks the same files and fails CI on Linux/mac
- *    with EEXIST (Windows happens to succeed). Bare needs the worker on a real
- *    filesystem path next to unpacked node_modules so deps resolve.
+ * 1) Copy the QVAC 0.24 worker bundle (qvac/worker/) into
+ *    app.asar.unpacked/qvac/worker/ on every platform. The SDK looks there
+ *    for index.js + index.bundle. qvac/ stays out of the asar file list:
+ *    packing it both into the asar and asarUnpack double-hardlinks the same
+ *    files and fails CI on Linux/mac with EEXIST. Bare needs the worker on a
+ *    real filesystem path next to unpacked node_modules so deps resolve.
  *
  * 2) On macOS: ad-hoc codesign the .app (--deep) so arm64 Gatekeeper does not
  *    hard-block with the non-bypassable "malware" dialog.
@@ -22,32 +23,21 @@ const fs = require('fs');
 
 const ROOT = path.join(__dirname, '..');
 
-function copyFile(src, dest) {
-  fs.mkdirSync(path.dirname(dest), { recursive: true });
-  fs.copyFileSync(src, dest);
-}
-
 function copyQvacWorker(context) {
   const resourcesDir =
     context.electronPlatformName === 'darwin'
       ? path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`, 'Contents', 'Resources')
       : path.join(context.appOutDir, 'resources');
 
-  const destDir = path.join(resourcesDir, 'app.asar.unpacked', 'qvac');
-  const files = ['worker.entry.mjs', 'addons.manifest.json'];
-  for (const name of files) {
-    const src = path.join(ROOT, 'qvac', name);
-    if (!fs.existsSync(src)) {
-      console.warn(`[afterPack] skip missing ${name}`);
-      continue;
+  const destDir = path.join(resourcesDir, 'app.asar.unpacked', 'qvac', 'worker');
+  const workerSrc = path.join(ROOT, 'qvac', 'worker');
+  for (const name of ['index.js', 'index.bundle']) {
+    if (!fs.existsSync(path.join(workerSrc, name))) {
+      throw new Error(`[afterPack] qvac/worker/${name} is missing. Bundle with \`qvac bundle sdk\` on this machine before packaging.`);
     }
-    const dest = path.join(destDir, name);
-    copyFile(src, dest);
-    console.log(`[afterPack] qvac → ${path.relative(context.appOutDir, dest)}`);
   }
-  // Ensure mobile-only bundle never ships
-  const junk = path.join(destDir, 'worker.bundle.js');
-  try { fs.rmSync(junk, { force: true }); } catch { /* */ }
+  fs.cpSync(workerSrc, destDir, { recursive: true });
+  console.log(`[afterPack] qvac worker → ${path.relative(context.appOutDir, destDir)}`);
 }
 
 function adHocSignMac(context) {
