@@ -126,13 +126,7 @@
       "icon": "assets/icons/dai-miner-1024.png",
       "identity": null,
       "target": [
-        {
-          "target": "dmg",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
-        }
+        "dmg"
       ],
       "files": [
         "!node_modules/@qvac/*/prebuilds/linux-*/**/*",
@@ -167,13 +161,7 @@
     },
     "linux": {
       "target": [
-        {
-          "target": "AppImage",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
-        }
+        "AppImage"
       ],
       "category": "Network;Utility;",
       "icon": "assets/icons",
