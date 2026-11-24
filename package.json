@@ -137,8 +137,8 @@
       "files": [
         "!node_modules/@qvac/*/prebuilds/linux-*/**/*",
         "!node_modules/@qvac/*/prebuilds/win32-*/**/*",
-        "!node_modules/bare-runtime-linux-*/**/*",
-        "!node_modules/bare-runtime-win32-*/**/*"
+        "!node_modules/bare-sidecar/prebuilds/linux-*/**/*",
+        "!node_modules/bare-sidecar/prebuilds/win32-*/**/*"
       ]
     },
     "win": {
@@ -160,8 +160,9 @@
       "files": [
         "!node_modules/@qvac/*/prebuilds/darwin-*/**/*",
         "!node_modules/@qvac/*/prebuilds/linux-*/**/*",
-        "!node_modules/bare-runtime-darwin-*/**/*",
-        "!node_modules/bare-runtime-linux-*/**/*"
+        "!node_modules/bare-sidecar/prebuilds/darwin-*/**/*",
+        "!node_modules/bare-sidecar/prebuilds/linux-*/**/*",
+        "!node_modules/bare-sidecar/prebuilds/win32-arm64/**/*"
       ]
     },
     "linux": {
@@ -179,8 +180,8 @@
       "files": [
         "!node_modules/@qvac/*/prebuilds/darwin-*/**/*",
         "!node_modules/@qvac/*/prebuilds/win32-*/**/*",
-        "!node_modules/bare-runtime-darwin-*/**/*",
-        "!node_modules/bare-runtime-win32-*/**/*"
+        "!node_modules/bare-sidecar/prebuilds/darwin-*/**/*",
+        "!node_modules/bare-sidecar/prebuilds/win32-*/**/*"
       ]
     },
     "deb": {

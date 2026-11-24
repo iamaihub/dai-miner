@@ -37,7 +37,7 @@ if (!fs.existsSync(NM)) process.exit(0);
 
 // Find all Mach-O binaries (executables + shared libraries) for darwin arm64/x64
 // under node_modules. We look for: .node files, known binary locations, and the
-// bare-runtime executable.
+// bare-sidecar prebuild.
 const targets = [];
 
 // 1. All prebuilt .node shared libraries for darwin
@@ -49,9 +49,9 @@ try {
   if (out) targets.push(...out.split('\n'));
 } catch {}
 
-// 2. The bare-runtime executables
+// 2. bare-sidecar prebuilds (QVAC 0.24). The old bare-runtime-* packages are gone.
 for (const arch of ['darwin-arm64', 'darwin-x64']) {
-  const bare = path.join(NM, `bare-runtime-${arch}`, 'bin', 'bare');
+  const bare = path.join(NM, 'bare-sidecar', 'prebuilds', arch, 'bare');
   if (fs.existsSync(bare)) targets.push(bare);
 }
 
