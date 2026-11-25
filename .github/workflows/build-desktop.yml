@@ -27,26 +27,44 @@ permissions:
   contents: write            # release step uploads assets
 
 jobs:
+  # matrix is not available in a job-level if, so a manual single-runner
+  # rebuild picks its row here. A tag push keeps the full set.
+  select:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+    steps:
+      - id: set
+        env:
+          EVENT: ${{ github.event_name }}
+          RUNNER: ${{ inputs.runner }}
+        run: |
+          set -euo pipefail
+          # One runner per arch. The QVAC worker bundle embeds the native
+          # addons of the machine that built it.
+          all='[
+            {"os":"ubuntu-24.04","platform":"linux"},
+            {"os":"ubuntu-24.04-arm","platform":"linux"},
+            {"os":"macos-15","platform":"mac"},
+            {"os":"macos-15-intel","platform":"mac"},
+            {"os":"windows-latest","platform":"win"}
+          ]'
+          if [ "$EVENT" = "workflow_dispatch" ] && [ -n "$RUNNER" ]; then
+            rows=$(jq -c --arg os "$RUNNER" '[.[] | select(.os == $os)]' <<<"$all")
+            if [ "$rows" = "[]" ]; then
+              echo "Unknown runner: $RUNNER" >&2
+              exit 1
+            fi
+          else
+            rows=$(jq -c '.' <<<"$all")
+          fi
+          echo "matrix=$(jq -c '{include:.}' <<<"$rows")" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: select
     strategy:
       fail-fast: false        # one platform failing shouldn't kill the others
-      matrix:
-        include:
-          # One runner per arch. The QVAC 0.24 worker bundle embeds the
-          # native addons of the machine that built it, so an x64 runner
-          # cannot produce a working arm64 installer (or the reverse).
-          - os: ubuntu-24.04
-            platform: linux
-          - os: ubuntu-24.04-arm
-            platform: linux
-          - os: macos-15
-            platform: mac
-          - os: macos-15-intel
-            platform: mac
-          - os: windows-latest
-            platform: win
-    # A manual run can rebuild one runner. Tag pushes still build every platform.
-    if: github.event_name != 'workflow_dispatch' || inputs.runner == '' || inputs.runner == matrix.os
+      matrix: ${{ fromJSON(needs.select.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 75
     steps:
