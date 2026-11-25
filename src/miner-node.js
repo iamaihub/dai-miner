@@ -2985,9 +2985,20 @@ export class DAIMinerNode {
               workerOnly: false,
             };
             persistCluster(patch);
-            const server = await qvac.startClusterWorker(patch);
+            // The code is the topic the phone joins. Announcing from this
+            // computer is optional: a missing RPC provider or a refused bind
+            // must still leave the code on screen.
+            let server = null;
+            let startError = '';
+            try {
+              server = await qvac.startClusterWorker(patch);
+            } catch (err) {
+              startError = err.message || String(err);
+              console.warn('[api/cluster] worker did not start:', startError);
+            }
             const snap = await snapshot(qvac, false);
             snap.started = !!server;
+            if (startError) snap.startError = startError;
             return sendJson(200, snap);
           } catch (e) {
             sendJson(400, { error: e.message });

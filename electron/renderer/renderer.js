@@ -1324,6 +1324,7 @@ async function postCluster(action) {
       note = data.started
         ? 'Code is on. Scan it with the wallet.'
         : 'Code is saved. This computer did not start its own announce; phones can still lend.';
+      if (!data.started && data.startError) note += ' ' + data.startError;
     }
     if (action === 'stop') note = 'Sharing stopped. The code is kept.';
     await paintCluster(data, note);
