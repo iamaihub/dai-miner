@@ -13,7 +13,13 @@ name: Build Desktop (Electron)
 #   right-click → Open, or  xattr -cr /Applications/DAI-Miner.app
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: 'Build only this runner (blank builds all). Example: macos-15-intel'
+        required: false
+        default: ''
+        type: string
   push:
     tags: ['v*']
 
@@ -39,8 +45,10 @@ jobs:
             platform: mac
           - os: windows-latest
             platform: win
+    # A manual run can rebuild one runner. Tag pushes still build every platform.
+    if: github.event_name != 'workflow_dispatch' || inputs.runner == '' || inputs.runner == matrix.os
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
 
@@ -65,7 +73,36 @@ jobs:
           # No GH_TOKEN here on purpose: it would make electron-builder auto-publish
           # versioned names + latest-*.yml (auto-update metadata the app doesn't use).
           # The "Attach to GitHub Release" step below owns the release, stable names only.
-        run: npm run build:electron:${{ matrix.platform }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          platform="${{ matrix.platform }}"
+          if [ "$platform" != "mac" ]; then
+            npm run "build:electron:${platform}"
+            exit 0
+          fi
+          # macos-15-intel fails hdiutil detach with "Resource busy" (exit 16)
+          # after the DMG is written. electron-builder retries that eject for a
+          # few seconds and then gives up. Detach leftover images and rebuild once.
+          cleanup_images() {
+            hdiutil info | awk '
+              /^\/dev\/disk/ { dev=$1 }
+              /image-path:/ {
+                if (dev != "" && $0 ~ /(dmg|electron|DAI-Miner)/) print dev
+                dev=""
+              }
+            ' | while read -r dev; do
+              hdiutil detach -force "$dev" || true
+            done
+          }
+          if npm run build:electron:mac; then
+            exit 0
+          fi
+          echo "Mac DMG build failed. Detaching leftover images and retrying once."
+          cleanup_images || true
+          sleep 20
+          rm -rf dist/electron
+          npm run build:electron:mac
 
       # electron-builder writes versioned names into dist/electron (build.directories.output).
       # Copy them to the stable landing names so the release URLs never change.
