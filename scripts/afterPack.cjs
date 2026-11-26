@@ -40,6 +40,30 @@ function copyQvacWorker(context) {
   console.log(`[afterPack] qvac worker → ${path.relative(context.appOutDir, destDir)}`);
 }
 
+// Ubuntu 24.04 blocks unprivileged user namespaces, so Electron falls back
+// to chrome-sandbox and aborts unless that helper is root and mode 4755.
+// An AppImage cannot be setuid. app.commandLine.appendSwitch('no-sandbox')
+// in the main script runs too late: the check happens before JavaScript.
+// The generated AppRun only adds --no-sandbox when the desktop file launches
+// the app, not when the user runs the AppImage directly.
+function wrapLinuxSandbox(context) {
+  if (context.electronPlatformName !== 'linux') return;
+  const name = context.packager.executableName;
+  const exe = path.join(context.appOutDir, name);
+  const real = path.join(context.appOutDir, `${name}.bin`);
+  if (!fs.existsSync(exe)) {
+    throw new Error(`[afterPack] Linux executable not found: ${exe}`);
+  }
+  if (fs.existsSync(real)) return;
+  fs.renameSync(exe, real);
+  fs.writeFileSync(
+    exe,
+    `#!/bin/sh\nexec "$(dirname "$0")/${name}.bin" --no-sandbox "$@"\n`,
+  );
+  fs.chmodSync(exe, 0o755);
+  console.log(`[afterPack] ${name} starts with --no-sandbox`);
+}
+
 function adHocSignMac(context) {
   if (context.electronPlatformName !== 'darwin') return;
   if (process.platform !== 'darwin') {
@@ -78,5 +102,6 @@ function adHocSignMac(context) {
 
 module.exports = async function afterPack(context) {
   copyQvacWorker(context);
+  wrapLinuxSandbox(context);
   adHocSignMac(context);
 };
